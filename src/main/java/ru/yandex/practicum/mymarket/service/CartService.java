@@ -2,11 +2,11 @@ package ru.yandex.practicum.mymarket.service;
 
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.dto.ItemDto;
 import ru.yandex.practicum.mymarket.model.Cart;
 import ru.yandex.practicum.mymarket.model.CartAction;
@@ -30,79 +30,74 @@ public class CartService {
     }
 
     @Transactional(readOnly = true)
-    public Map<Long, Integer> counts(String sessionId) {
+    public Mono<Map<Long, Integer>> counts(String sessionId) {
         return carts.findBySessionId(sessionId)
-                .map(cart -> cart.getItems().stream()
-                        .collect(Collectors.toMap(line -> line.getItem().getId(), CartItem::getCount)))
-                .orElse(Map.of());
+                .flatMap(cart -> cartItems.findByCartIdOrderByIdAsc(cart.getId())
+                        .collectMap(CartItem::getItemId, CartItem::getCount))
+                .defaultIfEmpty(Map.of());
     }
 
     @Transactional(readOnly = true)
-    public List<ItemDto> lines(String sessionId) {
+    public Mono<List<ItemDto>> lines(String sessionId) {
         return carts.findBySessionId(sessionId)
-                .map(cart -> cart.getItems().stream()
-                        .map(line -> ItemDto.from(line.getItem(), line.getCount()))
-                        .toList())
-                .orElse(List.of());
+                .flatMap(cart -> cartItems.findByCartIdOrderByIdAsc(cart.getId()).collectList())
+                .flatMap(this::toLines)
+                .defaultIfEmpty(List.of());
     }
 
     @Transactional(readOnly = true)
-    public int total(String sessionId) {
-        return lines(sessionId).stream().mapToInt(line -> line.price() * line.count()).sum();
+    public Mono<Integer> total(String sessionId) {
+        return lines(sessionId).map(rows -> rows.stream().mapToInt(line -> line.price() * line.count()).sum());
     }
 
     @Transactional
-    public void change(String sessionId, long itemId, CartAction action) {
-        Item item = items.findById(itemId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        Cart cart = carts.findBySessionId(sessionId).orElse(null);
-        if (cart == null) {
-            if (action != CartAction.PLUS) {
-                return;
+    public Mono<Void> change(String sessionId, long itemId, CartAction action) {
+        return items.findById(itemId)
+                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND)))
+                .flatMap(item -> carts.findBySessionId(sessionId)
+                        .switchIfEmpty(Mono.defer(() -> action == CartAction.PLUS
+                                ? carts.save(new Cart(sessionId))
+                                : Mono.empty()))
+                        .flatMap(cart -> apply(cart, item, action)))
+                .then();
+    }
+
+    private Mono<Void> apply(Cart cart, Item item, CartAction action) {
+        return cartItems.findByCartIdAndItemId(cart.getId(), item.getId())
+                .flatMap(line -> update(line, action))
+                .switchIfEmpty(Mono.defer(() -> action == CartAction.PLUS
+                        ? cartItems.save(new CartItem(cart.getId(), item.getId(), 1)).thenReturn(true)
+                        : Mono.empty()))
+                .then();
+    }
+
+    private Mono<Boolean> update(CartItem line, CartAction action) {
+        return switch (action) {
+            case PLUS -> {
+                line.setCount(line.getCount() + 1);
+                yield cartItems.save(line).thenReturn(true);
             }
-            cart = carts.save(new Cart(sessionId));
-        }
-        CartItem line = findLine(cart, item.getId());
-        switch (action) {
-            case PLUS -> plus(cart, line, item);
-            case MINUS -> minus(cart, line);
-            case DELETE -> delete(cart, line);
-        }
+            case MINUS -> line.getCount() <= 1
+                    ? cartItems.delete(line).thenReturn(true)
+                    : decrement(line);
+            case DELETE -> cartItems.delete(line).thenReturn(true);
+        };
     }
 
-    private static void plus(Cart cart, CartItem line, Item item) {
-        if (line == null) {
-            cart.add(new CartItem(cart, item, 1));
-        } else {
-            line.setCount(line.getCount() + 1);
-        }
+    private Mono<Boolean> decrement(CartItem line) {
+        line.setCount(line.getCount() - 1);
+        return cartItems.save(line).thenReturn(true);
     }
 
-    private void minus(Cart cart, CartItem line) {
-        if (line == null) {
-            return;
+    private Mono<List<ItemDto>> toLines(List<CartItem> rows) {
+        if (rows.isEmpty()) {
+            return Mono.just(List.of());
         }
-        if (line.getCount() <= 1) {
-            delete(cart, line);
-        } else {
-            line.setCount(line.getCount() - 1);
-        }
-    }
-
-    private void delete(Cart cart, CartItem line) {
-        if (line == null) {
-            return;
-        }
-        cart.remove(line);
-        cartItems.delete(line);
-    }
-
-    private static CartItem findLine(Cart cart, long itemId) {
-        for (CartItem line : cart.getItems()) {
-            if (line.getItem().getId().equals(itemId)) {
-                return line;
-            }
-        }
-        return null;
+        List<Long> ids = rows.stream().map(CartItem::getItemId).toList();
+        return items.findAllById(ids)
+                .collectMap(Item::getId)
+                .map(byId -> rows.stream()
+                        .map(row -> ItemDto.from(byId.get(row.getItemId()), row.getCount()))
+                        .toList());
     }
 }
