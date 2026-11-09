@@ -1,151 +1,228 @@
 package ru.yandex.practicum.mymarket;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.not;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.mock.web.MockHttpSession;
-import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.http.ResponseCookie;
+import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.web.reactive.function.BodyInserters;
 import ru.yandex.practicum.mymarket.model.Item;
 import ru.yandex.practicum.mymarket.repository.ItemRepository;
 
 @SpringBootTest
-@AutoConfigureMockMvc
+@AutoConfigureWebTestClient
 class PurchaseFlowTest {
 
+    private static final Duration TIMEOUT = Duration.ofSeconds(10);
+
     @Autowired
-    private MockMvc mockMvc;
+    private WebTestClient webTestClient;
 
     @Autowired
     private ItemRepository items;
 
     @Test
-    void catalogOpensWithSeededProducts() throws Exception {
-        mockMvc.perform(get("/"))
-                .andExpect(status().isOk())
-                .andExpect(content().string(containsString("Яблоки Гала")))
-                .andExpect(content().string(containsString("Страница: 1")))
-                .andExpect(content().string(containsString("src=\"/images/apples.png\"")))
-                .andExpect(content().string(containsString("name=\"pageNumber\" value=\"2\"")));
+    void catalogOpensWithSeededProducts() {
+        webTestClient.get().uri("/")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .value(body -> {
+                    assertThat(body).contains("Яблоки Гала");
+                    assertThat(body).contains("Страница: 1");
+                    assertThat(body).contains("src=\"/images/apples.png\"");
+                    assertThat(body).contains("name=\"pageNumber\" value=\"2\"");
+                });
 
-        mockMvc.perform(get("/items").param("search", "яблок"))
-                .andExpect(status().isOk())
-                .andExpect(content().string(containsString("Яблоки Гала")))
-                .andExpect(content().string(not(containsString("Молоко"))));
+        webTestClient.get()
+                .uri(builder -> builder.path("/items").queryParam("search", "яблок").build())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .value(body -> {
+                    assertThat(body).contains("Яблоки Гала");
+                    assertThat(body).doesNotContain("Молоко");
+                });
 
-        mockMvc.perform(get("/items").param("sort", "PRICE").param("pageSize", "20"))
-                .andExpect(status().isOk())
-                .andExpect(content().string(containsString("Вода минеральная")));
+        webTestClient.get()
+                .uri(builder -> builder.path("/items")
+                        .queryParam("sort", "PRICE")
+                        .queryParam("pageSize", "20")
+                        .build())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .value(body -> assertThat(body).contains("Вода минеральная"));
 
-        mockMvc.perform(get("/images/apples.png"))
-                .andExpect(status().isOk());
+        webTestClient.get().uri("/images/apples.png")
+                .exchange()
+                .expectStatus().isOk();
 
-        mockMvc.perform(get("/orders"))
-                .andExpect(status().isOk())
-                .andExpect(content().string(not(containsString("Заказ №"))));
+        webTestClient.get().uri("/orders")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .value(body -> assertThat(body).doesNotContain("Заказ №"));
 
-        mockMvc.perform(get("/cart/items"))
-                .andExpect(status().isOk())
-                .andExpect(content().string(not(containsString("Купить"))));
+        webTestClient.get().uri("/cart/items")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .value(body -> assertThat(body).doesNotContain("Купить"));
     }
 
     @Test
-    void countDoesNotDropBelowZero() throws Exception {
+    void countDoesNotDropBelowZero() {
         Item apples = item("Яблоки Гала");
-        MockHttpSession session = new MockHttpSession();
+        WebTestClient client = browser();
 
-        mockMvc.perform(post("/items/{id}", apples.getId()).param("action", "MINUS").session(session))
-                .andExpect(status().isOk())
-                .andExpect(content().string(containsString(">0<")));
+        client.post().uri("/items/{id}", apples.getId())
+                .body(BodyInserters.fromFormData("action", "MINUS"))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .value(body -> assertThat(body).contains(">0<"));
 
-        mockMvc.perform(post("/items/{id}", apples.getId()).param("action", "PLUS").session(session))
-                .andExpect(content().string(containsString(">1<")));
-        mockMvc.perform(post("/items/{id}", apples.getId()).param("action", "MINUS").session(session))
-                .andExpect(content().string(containsString(">0<")));
-        mockMvc.perform(post("/items/{id}", apples.getId()).param("action", "MINUS").session(session))
-                .andExpect(content().string(containsString(">0<")));
+        client.post().uri("/items/{id}", apples.getId())
+                .body(BodyInserters.fromFormData("action", "PLUS"))
+                .exchange()
+                .expectBody(String.class)
+                .value(body -> assertThat(body).contains(">1<"));
+        client.post().uri("/items/{id}", apples.getId())
+                .body(BodyInserters.fromFormData("action", "MINUS"))
+                .exchange()
+                .expectBody(String.class)
+                .value(body -> assertThat(body).contains(">0<"));
+        client.post().uri("/items/{id}", apples.getId())
+                .body(BodyInserters.fromFormData("action", "MINUS"))
+                .exchange()
+                .expectBody(String.class)
+                .value(body -> assertThat(body).contains(">0<"));
     }
 
     @Test
-    void buyingSnapshotsTheCartClearsItAndOpensTheOrder() throws Exception {
+    void buyingSnapshotsTheCartClearsItAndOpensTheOrder() {
         Item apples = item("Яблоки Гала");
         Item milk = item("Молоко 3,2%");
-        MockHttpSession session = new MockHttpSession();
+        WebTestClient client = browser();
 
-        mockMvc.perform(post("/buy").session(session))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("/cart/items"));
+        assertThat(pathAndQuery(locationOf(client.post().uri("/buy")
+                .exchange()
+                .expectStatus().is3xxRedirection())))
+                .isEqualTo("/cart/items");
 
-        mockMvc.perform(post("/items/{id}", apples.getId()).param("action", "PLUS").session(session))
-                .andExpect(status().isOk());
-        mockMvc.perform(post("/items/{id}", apples.getId()).param("action", "PLUS").session(session))
-                .andExpect(status().isOk());
-        String backToCatalog = mockMvc.perform(post("/items")
-                        .param("id", milk.getId().toString())
-                        .param("action", "PLUS")
-                        .param("search", "моло")
-                        .param("sort", "ALPHA")
-                        .param("pageSize", "10")
-                        .param("pageNumber", "1")
-                        .session(session))
-                .andExpect(status().is3xxRedirection())
-                .andReturn()
-                .getResponse()
-                .getRedirectedUrl();
-        assertThat(URLDecoder.decode(backToCatalog, StandardCharsets.UTF_8))
+        client.post().uri("/items/{id}", apples.getId())
+                .body(BodyInserters.fromFormData("action", "PLUS"))
+                .exchange()
+                .expectStatus().isOk();
+        client.post().uri("/items/{id}", apples.getId())
+                .body(BodyInserters.fromFormData("action", "PLUS"))
+                .exchange()
+                .expectStatus().isOk();
+
+        String backToCatalog = locationOf(client.post().uri("/items")
+                .body(BodyInserters.fromFormData("id", milk.getId().toString())
+                        .with("action", "PLUS")
+                        .with("search", "моло")
+                        .with("sort", "ALPHA")
+                        .with("pageSize", "10")
+                        .with("pageNumber", "1"))
+                .exchange()
+                .expectStatus().is3xxRedirection());
+        assertThat(URLDecoder.decode(pathAndQuery(backToCatalog), StandardCharsets.UTF_8))
                 .isEqualTo("/items?search=моло&sort=ALPHA&pageSize=10&pageNumber=1");
 
-        String location = mockMvc.perform(post("/buy").session(session))
-                .andExpect(status().is3xxRedirection())
-                .andReturn()
-                .getResponse()
-                .getRedirectedUrl();
-        assertThat(location).startsWith("/orders/").endsWith("?newOrder=true");
+        String location = locationOf(client.post().uri("/buy")
+                .exchange()
+                .expectStatus().is3xxRedirection());
+        assertThat(pathAndQuery(location)).startsWith("/orders/").endsWith("?newOrder=true");
 
-        mockMvc.perform(get(location).session(session))
-                .andExpect(status().isOk())
-                .andExpect(content().string(containsString("Поздравляем")))
-                .andExpect(content().string(containsString("Яблоки Гала")))
-                .andExpect(content().string(containsString("Молоко 3,2%")))
-                .andExpect(content().string(containsString("2 шт.")))
-                .andExpect(content().string(containsString("Сумма: " + (129 * 2 + 89))));
+        client.get().uri(pathAndQuery(location))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .value(body -> {
+                    assertThat(body).contains("Поздравляем");
+                    assertThat(body).contains("Яблоки Гала");
+                    assertThat(body).contains("Молоко 3,2%");
+                    assertThat(body).contains("2 шт.");
+                    assertThat(body).contains("Сумма: " + (129 * 2 + 89));
+                });
 
-        String orderPath = location.substring(0, location.indexOf('?'));
-        mockMvc.perform(get(orderPath).session(session))
-                .andExpect(status().isOk())
-                .andExpect(content().string(not(containsString("Поздравляем"))));
+        String orderPath = pathAndQuery(location);
+        orderPath = orderPath.substring(0, orderPath.indexOf('?'));
+        client.get().uri(orderPath)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .value(body -> assertThat(body).doesNotContain("Поздравляем"));
 
-        mockMvc.perform(get("/orders").session(session))
-                .andExpect(content().string(containsString("Заказ №")))
-                .andExpect(content().string(containsString("Яблоки Гала (2 шт.) " + (129 * 2) + " руб.")))
-                .andExpect(content().string(containsString("Молоко 3,2% (1 шт.) 89 руб.")));
+        client.get().uri("/orders")
+                .exchange()
+                .expectBody(String.class)
+                .value(body -> {
+                    assertThat(body).contains("Заказ №");
+                    assertThat(body).contains("Яблоки Гала (2 шт.) " + (129 * 2) + " руб.");
+                    assertThat(body).contains("Молоко 3,2% (1 шт.) 89 руб.");
+                });
 
-        mockMvc.perform(get("/cart/items").session(session))
-                .andExpect(content().string(not(containsString("Купить"))))
-                .andExpect(content().string(not(containsString("Яблоки Гала"))));
+        client.get().uri("/cart/items")
+                .exchange()
+                .expectBody(String.class)
+                .value(body -> {
+                    assertThat(body).doesNotContain("Купить");
+                    assertThat(body).doesNotContain("Яблоки Гала");
+                });
 
-        mockMvc.perform(get("/orders").session(new MockHttpSession()))
-                .andExpect(content().string(not(containsString("Заказ №"))));
+        browser().get().uri("/orders")
+                .exchange()
+                .expectBody(String.class)
+                .value(body -> assertThat(body).doesNotContain("Заказ №"));
 
-        mockMvc.perform(get("/items").param("search", "яблок").session(session))
-                .andExpect(content().string(containsString(">0<")));
+        client.get()
+                .uri(builder -> builder.path("/items").queryParam("search", "яблок").build())
+                .exchange()
+                .expectBody(String.class)
+                .value(body -> assertThat(body).contains(">0<"));
+    }
+
+    private WebTestClient browser() {
+        ResponseCookie cookie = webTestClient.get().uri("/cart/items")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .returnResult()
+                .getResponseCookies()
+                .getFirst("SESSION");
+        assertThat(cookie).isNotNull();
+        return webTestClient.mutate().defaultCookie("SESSION", cookie.getValue()).build();
     }
 
     private Item item(String title) {
-        return items.findAll().stream()
-                .filter(item -> item.getTitle().equals(title))
-                .findFirst()
-                .orElseThrow();
+        Item found = items.findAll()
+                .filter(row -> row.getTitle().equals(title))
+                .blockFirst(TIMEOUT);
+        assertThat(found).isNotNull();
+        return found;
+    }
+
+    private static String locationOf(WebTestClient.ResponseSpec response) {
+        return response.returnResult(Void.class).getResponseHeaders().getLocation().toString();
+    }
+
+    private static String pathAndQuery(String location) {
+        if (location.startsWith("http")) {
+            URI uri = URI.create(location);
+            String query = uri.getRawQuery();
+            return uri.getRawPath() + (query == null ? "" : "?" + query);
+        }
+        return location;
     }
 }
