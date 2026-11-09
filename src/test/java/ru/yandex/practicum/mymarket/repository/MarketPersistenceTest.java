@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import jakarta.persistence.EntityManager;
 import jakarta.validation.ConstraintViolationException;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -49,21 +48,20 @@ class MarketPersistenceTest {
         save("Вода", "негазированная", 55);
 
         CatalogPage byTitle = catalog.show("МОЛО", "NO", 5, 1, "s");
-        assertThat(flat(byTitle)).extracting(ItemDto::title).containsExactly("Молоко");
+        assertThat(byTitle.items()).extracting(ItemDto::title).containsExactly("Молоко");
 
         CatalogPage byDescription = catalog.show("ржаной", "ALPHA", 5, 1, "s");
-        assertThat(flat(byDescription)).extracting(ItemDto::id).containsExactly(bread.getId());
+        assertThat(byDescription.items()).extracting(ItemDto::id).containsExactly(bread.getId());
 
         CatalogPage byPrice = catalog.show("", "PRICE", 10, 1, "s");
-        assertThat(flat(byPrice)).extracting(ItemDto::title).containsExactly("Вода", "Хлеб", "Молоко");
+        assertThat(byPrice.items()).extracting(ItemDto::title).containsExactly("Вода", "Хлеб", "Молоко");
 
         CatalogPage byAlpha = catalog.show("  ", "alpha", 10, 1, "s");
         assertThat(byAlpha.search()).isEmpty();
         assertThat(byAlpha.sort()).isEqualTo("ALPHA");
-        assertThat(flat(byAlpha)).extracting(ItemDto::title).containsExactly("Вода", "Молоко", "Хлеб");
+        assertThat(byAlpha.items()).extracting(ItemDto::title).containsExactly("Вода", "Молоко", "Хлеб");
 
-        assertThat(byPrice.items()).allSatisfy(row -> assertThat(row).hasSize(3));
-        assertThat(flat(byPrice)).allSatisfy(item -> assertThat(item.imgPath()).doesNotStartWith("/"));
+        assertThat(byPrice.items()).allSatisfy(item -> assertThat(item.imgPath()).doesNotStartWith("/"));
         assertThat(milk.getId()).isNotNull();
     }
 
@@ -72,14 +70,14 @@ class MarketPersistenceTest {
         save("100%", "скидка", 10);
         save("Молоко", "обычное", 20);
 
-        assertThat(flat(catalog.show("%", "NO", 5, 1, "s")))
+        assertThat(catalog.show("%", "NO", 5, 1, "s").items())
                 .extracting(ItemDto::title)
                 .containsExactly("100%");
-        assertThat(flat(catalog.show("_", "NO", 5, 1, "s"))).isEmpty();
+        assertThat(catalog.show("_", "NO", 5, 1, "s").items()).isEmpty();
     }
 
     @Test
-    void pagesAreRowsOfThreeWithPlaceholders() {
+    void pagingFollowsPageSizeAndNumber() {
         save("Один", "a", 1);
         save("Два", "b", 2);
         save("Три", "c", 3);
@@ -90,15 +88,12 @@ class MarketPersistenceTest {
         assertThat(page.paging().pageNumber()).isEqualTo(1);
         assertThat(page.paging().hasPrevious()).isFalse();
         assertThat(page.paging().hasNext()).isFalse();
-        assertThat(page.items()).hasSize(2);
-        assertThat(page.items().get(0)).extracting(ItemDto::title).containsExactly("Один", "Два", "Три");
-        assertThat(page.items().get(1)).extracting(ItemDto::id).containsExactly(page.items().get(1).get(0).id(), -1L, -1L);
+        assertThat(page.items()).extracting(ItemDto::title).containsExactly("Один", "Два", "Три", "Четыре");
 
         CatalogPage second = catalog.show("", "NO", 3, 2, "s");
         assertThat(second.paging().hasPrevious()).isTrue();
         assertThat(second.paging().hasNext()).isFalse();
-        assertThat(flat(second)).extracting(ItemDto::title).containsExactly("Четыре");
-        assertThat(second.items().get(0)).extracting(ItemDto::id).contains(-1L);
+        assertThat(second.items()).extracting(ItemDto::title).containsExactly("Четыре");
     }
 
     @Test
@@ -172,12 +167,5 @@ class MarketPersistenceTest {
 
     private Item save(String title, String description, int price) {
         return items.save(new Item(title, description, "images/" + title + ".png", price));
-    }
-
-    private static List<ItemDto> flat(CatalogPage page) {
-        return page.items().stream()
-                .flatMap(List::stream)
-                .filter(item -> item.id() != -1)
-                .toList();
     }
 }

@@ -13,8 +13,4 @@ public record ItemDto(long id, String title, String description, String imgPath,
                 item.getPrice(),
                 count);
     }
-
-    public static ItemDto placeholder() {
-        return new ItemDto(-1, "", "", "", 0, 0);
-    }
 }

@@ -1,6 +1,5 @@
 package ru.yandex.practicum.mymarket.service;
 
-import jakarta.persistence.EntityManager;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -13,6 +12,7 @@ import ru.yandex.practicum.mymarket.model.Cart;
 import ru.yandex.practicum.mymarket.model.CartAction;
 import ru.yandex.practicum.mymarket.model.CartItem;
 import ru.yandex.practicum.mymarket.model.Item;
+import ru.yandex.practicum.mymarket.repository.CartItemRepository;
 import ru.yandex.practicum.mymarket.repository.CartRepository;
 import ru.yandex.practicum.mymarket.repository.ItemRepository;
 
@@ -20,13 +20,13 @@ import ru.yandex.practicum.mymarket.repository.ItemRepository;
 public class CartService {
 
     private final CartRepository carts;
+    private final CartItemRepository cartItems;
     private final ItemRepository items;
-    private final EntityManager entityManager;
 
-    public CartService(CartRepository carts, ItemRepository items, EntityManager entityManager) {
+    public CartService(CartRepository carts, CartItemRepository cartItems, ItemRepository items) {
         this.carts = carts;
+        this.cartItems = cartItems;
         this.items = items;
-        this.entityManager = entityManager;
     }
 
     @Transactional(readOnly = true)
@@ -94,7 +94,7 @@ public class CartService {
             return;
         }
         cart.remove(line);
-        entityManager.remove(line);
+        cartItems.delete(line);
     }
 
     private static CartItem findLine(Cart cart, long itemId) {

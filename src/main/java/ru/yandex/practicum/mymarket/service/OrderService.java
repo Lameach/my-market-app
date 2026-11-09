@@ -1,6 +1,5 @@
 package ru.yandex.practicum.mymarket.service;
 
-import jakarta.persistence.EntityManager;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -14,6 +13,7 @@ import ru.yandex.practicum.mymarket.model.Cart;
 import ru.yandex.practicum.mymarket.model.CartItem;
 import ru.yandex.practicum.mymarket.model.Order;
 import ru.yandex.practicum.mymarket.model.OrderItem;
+import ru.yandex.practicum.mymarket.repository.CartItemRepository;
 import ru.yandex.practicum.mymarket.repository.CartRepository;
 import ru.yandex.practicum.mymarket.repository.OrderRepository;
 
@@ -22,12 +22,12 @@ public class OrderService {
 
     private final OrderRepository orders;
     private final CartRepository carts;
-    private final EntityManager entityManager;
+    private final CartItemRepository cartItems;
 
-    public OrderService(OrderRepository orders, CartRepository carts, EntityManager entityManager) {
+    public OrderService(OrderRepository orders, CartRepository carts, CartItemRepository cartItems) {
         this.orders = orders;
         this.carts = carts;
-        this.entityManager = entityManager;
+        this.cartItems = cartItems;
     }
 
     @Transactional(readOnly = true)
@@ -64,9 +64,9 @@ public class OrderService {
             order.add(new OrderItem(line.getItem().getTitle(), line.getItem().getPrice(), line.getCount()));
         }
         Order saved = orders.save(order);
+        // The cart side is inverse: emptying the collection does not delete the rows.
+        cartItems.deleteAll(lines);
         cart.getItems().clear();
-        // Clearing the bag does not delete inverse children, so remove each row.
-        lines.forEach(entityManager::remove);
         return Optional.of(saved.getId());
     }
 

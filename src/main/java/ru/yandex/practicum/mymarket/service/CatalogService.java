@@ -1,6 +1,5 @@
 package ru.yandex.practicum.mymarket.service;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -46,7 +45,7 @@ public class CatalogService {
                 .map(item -> ItemDto.from(item, counts.getOrDefault(item.getId(), 0)))
                 .toList();
         return new CatalogPage(
-                rows(dtos),
+                dtos,
                 new Paging(size, number, page.hasPrevious(), page.hasNext()),
                 normalizedSearch,
                 normalizedSort);
@@ -89,17 +88,5 @@ public class CatalogService {
             case SORT_PRICE -> Sort.by(Sort.Order.asc("price")).and(Sort.by("id"));
             default -> Sort.by("id");
         };
-    }
-
-    static List<List<ItemDto>> rows(List<ItemDto> items) {
-        List<List<ItemDto>> rows = new ArrayList<>();
-        for (int start = 0; start < items.size(); start += 3) {
-            List<ItemDto> row = new ArrayList<>(3);
-            for (int index = start; index < start + 3; index++) {
-                row.add(index < items.size() ? items.get(index) : ItemDto.placeholder());
-            }
-            rows.add(row);
-        }
-        return rows;
     }
 }

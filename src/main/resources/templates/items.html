@@ -50,36 +50,38 @@
                 </div>
             </div>
         </div>
-        <div class="row p-2" th:each="itemsRow : ${items}">
-            <div class="col" th:each="item : ${itemsRow}">
-                <div class="card" th:if="${item.id() != -1}">
-                    <a th:href="${'/items/'+item.id()}">
-                        <img th:src="${'/'+item.imgPath()}" class="card-img-top" alt="Нет изображения">
-                    </a>
-                    <div class="card-body">
-                        <h5 class="card-title" th:text="${item.title()}"></h5>
-                        <h5>
-                            <span class="badge text-bg-success justify-content-end" th:text="${item.price()}+' руб.'"></span>
-                        </h5>
-                        <p class="card-text" th:text="${item.description()}"></p>
-                        <form method="post" th:action="@{/items}">
-                            <div class="hstack gap-3">
-                                <input type="hidden" name="id" th:value="${item.id()}">
-                                <input type="hidden" name="search" th:value="${search}">
-                                <input type="hidden" name="sort" th:value="${sort}">
-                                <input type="hidden" name="pageSize" th:value="${paging.pageSize()}">
-                                <input type="hidden" name="pageNumber" th:value="${paging.pageNumber()}">
-                                <button type="submit" class="btn btn-outline-secondary" name="action" value="MINUS">-</button>
-                                <span th:text="${item.count()}"></span>
-                                <button type="submit" class="btn btn-outline-secondary" name="action" value="PLUS">+</button>
-                                <button type="submit" class="btn btn-warning ms-auto bi bi-cart4" name="action" value="PLUS" th:if="${item.count()==0}"></button>
-                            </div>
-                        </form>
+        <th:block th:if="${!items.isEmpty()}">
+            <div class="row p-2" th:each="row : ${#numbers.sequence(0, T(java.lang.Math).floorDiv(items.size() + 2, 3) - 1)}">
+                <div class="col" th:each="col : ${#numbers.sequence(0, 2)}" th:with="index=${row * 3 + col}">
+                    <div class="card" th:if="${index < items.size()}" th:with="item=${items.get(index)}">
+                        <a th:href="${'/items/'+item.id()}">
+                            <img th:src="${'/'+item.imgPath()}" class="card-img-top" alt="Нет изображения">
+                        </a>
+                        <div class="card-body">
+                            <h5 class="card-title" th:text="${item.title()}"></h5>
+                            <h5>
+                                <span class="badge text-bg-success justify-content-end" th:text="${item.price()}+' руб.'"></span>
+                            </h5>
+                            <p class="card-text" th:text="${item.description()}"></p>
+                            <form method="post" th:action="@{/items}">
+                                <div class="hstack gap-3">
+                                    <input type="hidden" name="id" th:value="${item.id()}">
+                                    <input type="hidden" name="search" th:value="${search}">
+                                    <input type="hidden" name="sort" th:value="${sort}">
+                                    <input type="hidden" name="pageSize" th:value="${paging.pageSize()}">
+                                    <input type="hidden" name="pageNumber" th:value="${paging.pageNumber()}">
+                                    <button type="submit" class="btn btn-outline-secondary" name="action" value="MINUS">-</button>
+                                    <span th:text="${item.count()}"></span>
+                                    <button type="submit" class="btn btn-outline-secondary" name="action" value="PLUS">+</button>
+                                    <button type="submit" class="btn btn-warning ms-auto bi bi-cart4" name="action" value="PLUS" th:if="${item.count()==0}"></button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
+                    <div th:unless="${index < items.size()}">&nbsp;</div>
                 </div>
-                <div th:unless="${item.id() != -1}">&nbsp;</div>
             </div>
-        </div>
+        </th:block>
         <div class="row p-2">
             <div class="col">
                 <div class="hstack gap-3 justify-content-center">

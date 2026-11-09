@@ -55,11 +55,7 @@ class MarketControllerTest {
     @Test
     void catalogDefaultsAndBothEntryPoints() throws Exception {
         ItemDto apple = new ItemDto(1, "Яблоки Гала", "Сладкие", "images/apples.png", 129, 2);
-        CatalogPage page = new CatalogPage(
-                List.of(List.of(apple, apple, ItemDto.placeholder())),
-                new Paging(5, 1, false, true),
-                "",
-                "NO");
+        CatalogPage page = new CatalogPage(List.of(apple), new Paging(5, 1, false, true), "", "NO");
         when(catalog.show(anyString(), anyString(), anyInt(), anyInt(), anyString())).thenReturn(page);
 
         mockMvc.perform(get("/"))
@@ -71,7 +67,8 @@ class MarketControllerTest {
                 .andExpect(model().attribute("paging", page.paging()))
                 .andExpect(content().string(containsString("Страница: 1")))
                 .andExpect(content().string(containsString("src=\"/images/apples.png\"")))
-                .andExpect(content().string(containsString(">2<")));
+                .andExpect(content().string(containsString(">2<")))
+                .andExpect(content().string(containsString("<div>&nbsp;</div>")));
         verify(catalog).show(eq(""), eq("NO"), eq(5), eq(1), anyString());
 
         mockMvc.perform(get("/items")
@@ -145,19 +142,26 @@ class MarketControllerTest {
     }
 
     @Test
-    void cartPostRendersTheCartAndShowsBuyWhenItHasItems() throws Exception {
+    void cartPostRedirectsSoRefreshDoesNotRepeatTheAction() throws Exception {
+        mockMvc.perform(post("/cart/items").param("id", "2").param("action", "DELETE"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/cart/items"));
+        verify(cart).change(anyString(), eq(2L), eq(CartAction.DELETE));
+    }
+
+    @Test
+    void cartWithItemsShowsBuy() throws Exception {
         ItemDto milk = new ItemDto(2, "Молоко", "1 л", "images/milk.png", 89, 1);
         when(cart.lines(anyString())).thenReturn(List.of(milk));
         when(cart.total(anyString())).thenReturn(89);
 
-        mockMvc.perform(post("/cart/items").param("id", "2").param("action", "DELETE"))
+        mockMvc.perform(get("/cart/items"))
                 .andExpect(status().isOk())
                 .andExpect(view().name("cart"))
                 .andExpect(model().attribute("items", List.of(milk)))
                 .andExpect(model().attribute("total", 89))
                 .andExpect(content().string(containsString("Купить")))
                 .andExpect(content().string(containsString("Итого: 89 руб.")));
-        verify(cart).change(anyString(), eq(2L), eq(CartAction.DELETE));
     }
 
     @Test

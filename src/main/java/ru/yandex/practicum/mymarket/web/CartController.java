@@ -26,14 +26,9 @@ public class CartController {
     }
 
     @PostMapping("/cart/items")
-    public String change(
-            @RequestParam long id,
-            @RequestParam String action,
-            HttpSession session,
-            Model model) {
+    public String change(@RequestParam long id, @RequestParam String action, HttpSession session) {
         cart.change(session.getId(), id, Actions.cart(action));
-        show(session.getId(), model);
-        return "cart";
+        return "redirect:/cart/items";
     }
 
     private void show(String sessionId, Model model) {
