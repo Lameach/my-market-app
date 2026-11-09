@@ -6,14 +6,14 @@
 
 - Java 21
 - Spring Boot
-- Spring Web MVC
+- Spring WebFlux
 - Thymeleaf
-- Spring Data JPA и Hibernate
-- H2 в памяти
+- Spring Data R2DBC
+- H2 в памяти через r2dbc-h2
 - Maven
 - JUnit 5
-- Spring Boot Test
-- встроенный Tomcat
+- Spring Boot Test и WebTestClient
+- встроенный Netty
 - исполняемый JAR
 - Docker
 
