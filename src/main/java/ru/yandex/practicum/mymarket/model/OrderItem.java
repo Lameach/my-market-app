@@ -1,46 +1,40 @@
 package ru.yandex.practicum.mymarket.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.PersistenceCreator;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
 
-@Entity
-@Table(name = "order_items")
+@Table("order_items")
 public class OrderItem {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "order_id", nullable = false)
-    private Order order;
+    @Column("order_id")
+    private Long orderId;
 
     @NotBlank
-    @Column(nullable = false)
     private String title;
 
     @PositiveOrZero
-    @Column(nullable = false)
     private int price;
 
     @Positive
-    @Column(name = "item_count", nullable = false)
+    @Column("item_count")
     private int count;
 
-    protected OrderItem() {
+    public OrderItem(Long orderId, String title, int price, int count) {
+        this(null, orderId, title, price, count);
     }
 
-    public OrderItem(String title, int price, int count) {
+    @PersistenceCreator
+    public OrderItem(Long id, Long orderId, String title, int price, int count) {
+        this.id = id;
+        this.orderId = orderId;
         this.title = title;
         this.price = price;
         this.count = count;
@@ -50,12 +44,8 @@ public class OrderItem {
         return id;
     }
 
-    public Order getOrder() {
-        return order;
-    }
-
-    public void setOrder(Order order) {
-        this.order = order;
+    public Long getOrderId() {
+        return orderId;
     }
 
     public String getTitle() {

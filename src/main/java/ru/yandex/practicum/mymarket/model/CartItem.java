@@ -1,42 +1,36 @@
 package ru.yandex.practicum.mymarket.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
 import jakarta.validation.constraints.PositiveOrZero;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.PersistenceCreator;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
 
-@Entity
-@Table(name = "cart_items")
+@Table("cart_items")
 public class CartItem {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "cart_id", nullable = false)
-    private Cart cart;
+    @Column("cart_id")
+    private Long cartId;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "item_id", nullable = false)
-    private Item item;
+    @Column("item_id")
+    private Long itemId;
 
     @PositiveOrZero
-    @Column(name = "item_count", nullable = false)
+    @Column("item_count")
     private int count;
 
-    protected CartItem() {
+    public CartItem(Long cartId, Long itemId, int count) {
+        this(null, cartId, itemId, count);
     }
 
-    public CartItem(Cart cart, Item item, int count) {
-        this.cart = cart;
-        this.item = item;
+    @PersistenceCreator
+    public CartItem(Long id, Long cartId, Long itemId, int count) {
+        this.id = id;
+        this.cartId = cartId;
+        this.itemId = itemId;
         this.count = count;
     }
 
@@ -44,16 +38,12 @@ public class CartItem {
         return id;
     }
 
-    public Cart getCart() {
-        return cart;
+    public Long getCartId() {
+        return cartId;
     }
 
-    public void setCart(Cart cart) {
-        this.cart = cart;
-    }
-
-    public Item getItem() {
-        return item;
+    public Long getItemId() {
+        return itemId;
     }
 
     public int getCount() {

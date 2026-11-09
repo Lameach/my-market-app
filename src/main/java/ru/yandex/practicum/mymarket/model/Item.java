@@ -1,42 +1,38 @@
 package ru.yandex.practicum.mymarket.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.PositiveOrZero;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.PersistenceCreator;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
 
-@Entity
-@Table(name = "items")
+@Table("items")
 public class Item {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @NotBlank
-    @Column(nullable = false)
     private String title;
 
     @NotBlank
-    @Column(nullable = false, length = 2000)
     private String description;
 
     @NotBlank
-    @Column(name = "img_path", nullable = false)
+    @Column("img_path")
     private String imgPath;
 
     @PositiveOrZero
-    @Column(nullable = false)
     private int price;
 
-    protected Item() {
+    public Item(String title, String description, String imgPath, int price) {
+        this(null, title, description, imgPath, price);
     }
 
-    public Item(String title, String description, String imgPath, int price) {
+    @PersistenceCreator
+    public Item(Long id, String title, String description, String imgPath, int price) {
+        this.id = id;
         this.title = title;
         this.description = description;
         this.imgPath = imgPath;
