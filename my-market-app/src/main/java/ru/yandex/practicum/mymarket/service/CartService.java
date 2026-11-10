@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.reactive.TransactionalOperator;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
+import ru.yandex.practicum.mymarket.cache.ItemLookup;
 import ru.yandex.practicum.mymarket.dto.ItemDto;
 import ru.yandex.practicum.mymarket.model.Cart;
 import ru.yandex.practicum.mymarket.model.CartAction;
@@ -17,20 +18,19 @@ import ru.yandex.practicum.mymarket.model.CartItem;
 import ru.yandex.practicum.mymarket.model.Item;
 import ru.yandex.practicum.mymarket.repository.CartItemRepository;
 import ru.yandex.practicum.mymarket.repository.CartRepository;
-import ru.yandex.practicum.mymarket.repository.ItemRepository;
 
 @Service
 public class CartService {
 
     private final CartRepository carts;
     private final CartItemRepository cartItems;
-    private final ItemRepository items;
+    private final ItemLookup items;
     private final TransactionalOperator transactions;
 
     public CartService(
             CartRepository carts,
             CartItemRepository cartItems,
-            ItemRepository items,
+            ItemLookup items,
             ReactiveTransactionManager transactionManager) {
         this.carts = carts;
         this.cartItems = cartItems;
@@ -64,7 +64,7 @@ public class CartService {
     }
 
     private Mono<Void> changeLocked(String sessionId, long itemId, CartAction action) {
-        return items.findById(itemId)
+        return items.card(itemId)
                 .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND)))
                 .flatMap(item -> carts.findBySessionIdForUpdate(sessionId)
                         .switchIfEmpty(Mono.defer(() -> action == CartAction.PLUS
@@ -106,8 +106,7 @@ public class CartService {
             return Mono.just(List.of());
         }
         List<Long> ids = rows.stream().map(CartItem::getItemId).toList();
-        return items.findAllById(ids)
-                .collectMap(Item::getId)
+        return items.cards(ids)
                 .map(byId -> rows.stream()
                         .map(row -> ItemDto.from(byId.get(row.getItemId()), row.getCount()))
                         .toList());

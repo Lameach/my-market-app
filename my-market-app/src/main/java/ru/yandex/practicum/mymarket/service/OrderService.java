@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import ru.yandex.practicum.mymarket.cache.ItemLookup;
 import ru.yandex.practicum.mymarket.dto.OrderDto;
 import ru.yandex.practicum.mymarket.dto.OrderItemDto;
 import ru.yandex.practicum.mymarket.model.CartItem;
@@ -16,7 +17,6 @@ import ru.yandex.practicum.mymarket.model.Order;
 import ru.yandex.practicum.mymarket.model.OrderItem;
 import ru.yandex.practicum.mymarket.repository.CartItemRepository;
 import ru.yandex.practicum.mymarket.repository.CartRepository;
-import ru.yandex.practicum.mymarket.repository.ItemRepository;
 import ru.yandex.practicum.mymarket.repository.OrderItemRepository;
 import ru.yandex.practicum.mymarket.repository.OrderRepository;
 
@@ -27,7 +27,7 @@ public class OrderService {
     private final OrderItemRepository orderItems;
     private final CartRepository carts;
     private final CartItemRepository cartItems;
-    private final ItemRepository items;
+    private final ItemLookup items;
     private final PaymentGateway payments;
 
     public OrderService(
@@ -35,7 +35,7 @@ public class OrderService {
             OrderItemRepository orderItems,
             CartRepository carts,
             CartItemRepository cartItems,
-            ItemRepository items,
+            ItemLookup items,
             PaymentGateway payments) {
         this.orders = orders;
         this.orderItems = orderItems;
@@ -73,8 +73,7 @@ public class OrderService {
             return Mono.empty();
         }
         List<Long> ids = lines.stream().map(CartItem::getItemId).toList();
-        return items.findAllById(ids)
-                .collectMap(Item::getId)
+        return items.cards(ids)
                 .flatMap(byId -> payments.pay(total(lines, byId))
                         .then(orders.save(new Order(sessionId)))
                         .flatMap(saved -> Flux.fromIterable(lines)

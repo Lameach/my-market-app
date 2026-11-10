@@ -1,12 +1,16 @@
 package ru.yandex.practicum.mymarket;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.util.List;
 import okhttp3.mockwebserver.Dispatcher;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.BeforeEach;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
+import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -26,14 +30,22 @@ abstract class StorefrontSpringTest {
         }
     }
 
+    @Autowired
+    private ReactiveStringRedisTemplate redis;
+
     @DynamicPropertySource
     static void paymentService(DynamicPropertyRegistry registry) {
         registry.add("payment.base-url", StorefrontSpringTest::paymentBaseUrl);
+        registry.add("spring.data.redis.database", () -> "1");
     }
 
     @BeforeEach
     void paymentServiceAcceptsOrders() {
         acceptPayments();
+        List<String> keys = redis.keys("market:*").collectList().block(Duration.ofSeconds(5));
+        if (keys != null && !keys.isEmpty()) {
+            redis.delete(keys.toArray(String[]::new)).block(Duration.ofSeconds(5));
+        }
     }
 
     static void acceptPayments() {

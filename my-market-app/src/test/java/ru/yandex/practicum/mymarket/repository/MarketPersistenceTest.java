@@ -9,6 +9,9 @@ import io.r2dbc.spi.Connection;
 import io.r2dbc.spi.ConnectionFactory;
 import io.r2dbc.spi.Statement;
 import jakarta.validation.ConstraintViolationException;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -38,6 +41,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
+import ru.yandex.practicum.mymarket.cache.CatalogEntry;
+import ru.yandex.practicum.mymarket.cache.ItemLookup;
 import ru.yandex.practicum.mymarket.config.ValidateBeforeConvert;
 import ru.yandex.practicum.mymarket.dto.CatalogPage;
 import ru.yandex.practicum.mymarket.dto.ItemDto;
@@ -70,7 +75,8 @@ import ru.yandex.practicum.mymarket.service.PaymentGateway;
         MarketPersistenceTest.FailSecondOrderItem.class,
         MarketPersistenceTest.PauseFirstWrite.class,
         MarketPersistenceTest.CartStatementTracker.class,
-        MarketPersistenceTest.SuccessfulPayments.class
+        MarketPersistenceTest.SuccessfulPayments.class,
+        MarketPersistenceTest.RepositoryItems.class
 })
 class MarketPersistenceTest {
 
@@ -566,6 +572,33 @@ class MarketPersistenceTest {
             public Mono<? extends Connection> create() {
                 return super.create().map(tracker::trackConnection);
             }
+        }
+    }
+
+    static class RepositoryItems implements ItemLookup {
+
+        private final ItemRepository items;
+
+        RepositoryItems(ItemRepository items) {
+            this.items = items;
+        }
+
+        @Override
+        public Mono<List<CatalogEntry>> catalog() {
+            return items.findAll().map(CatalogEntry::from).collectList();
+        }
+
+        @Override
+        public Mono<Item> card(long id) {
+            return items.findById(id);
+        }
+
+        @Override
+        public Mono<Map<Long, Item>> cards(Collection<Long> ids) {
+            if (ids.isEmpty()) {
+                return Mono.just(Map.of());
+            }
+            return items.findAllById(ids).collectMap(Item::getId);
         }
     }
 
