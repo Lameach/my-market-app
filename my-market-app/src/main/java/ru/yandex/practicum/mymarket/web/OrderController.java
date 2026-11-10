@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.server.WebSession;
 import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.service.OrderService;
+import ru.yandex.practicum.mymarket.service.PaymentRejectedException;
 
 @Controller
 public class OrderController {
@@ -45,6 +46,16 @@ public class OrderController {
         session.start();
         return orders.buy(session.getId())
                 .map(id -> "redirect:/orders/" + id + "?newOrder=true")
+                .onErrorResume(OrderController::rejected, ex -> Mono.just("redirect:/cart/items"))
                 .defaultIfEmpty("redirect:/cart/items");
+    }
+
+    private static boolean rejected(Throwable failure) {
+        for (Throwable current = failure; current != null; current = current.getCause()) {
+            if (current instanceof PaymentRejectedException) {
+                return true;
+            }
+        }
+        return false;
     }
 }

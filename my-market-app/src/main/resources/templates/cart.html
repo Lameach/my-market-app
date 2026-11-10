@@ -46,10 +46,11 @@
         </div>
         <div class="row p-2">
             <div class="col">
+                <p class="text-danger" th:if="${paymentMessage}" th:text="${paymentMessage}"></p>
                 <form action="/buy" method="post" th:if="${!items.isEmpty()}">
                     <div class="hstack gap-3">
                         <h2 th:text="'Итого: '+${total}+' руб.'"/>
-                        <button class="btn btn-warning ms-auto">Купить</button>
+                        <button class="btn btn-warning ms-auto" th:disabled="${!canBuy}">Купить</button>
                     </div>
                 </form>
             </div>

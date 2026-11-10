@@ -1,6 +1,7 @@
 package ru.yandex.practicum.mymarket.service;
 
 import java.util.List;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,18 +28,21 @@ public class OrderService {
     private final CartRepository carts;
     private final CartItemRepository cartItems;
     private final ItemRepository items;
+    private final PaymentGateway payments;
 
     public OrderService(
             OrderRepository orders,
             OrderItemRepository orderItems,
             CartRepository carts,
             CartItemRepository cartItems,
-            ItemRepository items) {
+            ItemRepository items,
+            PaymentGateway payments) {
         this.orders = orders;
         this.orderItems = orderItems;
         this.carts = carts;
         this.cartItems = cartItems;
         this.items = items;
+        this.payments = payments;
     }
 
     @Transactional(readOnly = true)
@@ -71,7 +75,8 @@ public class OrderService {
         List<Long> ids = lines.stream().map(CartItem::getItemId).toList();
         return items.findAllById(ids)
                 .collectMap(Item::getId)
-                .flatMap(byId -> orders.save(new Order(sessionId))
+                .flatMap(byId -> payments.pay(total(lines, byId))
+                        .then(orders.save(new Order(sessionId)))
                         .flatMap(saved -> Flux.fromIterable(lines)
                                 .concatMap(line -> {
                                     Item item = byId.get(line.getItemId());
@@ -84,6 +89,12 @@ public class OrderService {
                                 })
                                 .then(cartItems.deleteAll(lines))
                                 .thenReturn(saved.getId())));
+    }
+
+    private static long total(List<CartItem> lines, Map<Long, Item> byId) {
+        return lines.stream()
+                .mapToLong(line -> (long) byId.get(line.getItemId()).getPrice() * line.getCount())
+                .sum();
     }
 
     private Mono<OrderDto> toDto(Order order) {

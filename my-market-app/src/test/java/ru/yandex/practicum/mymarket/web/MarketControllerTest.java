@@ -33,6 +33,7 @@ import ru.yandex.practicum.mymarket.model.CartAction;
 import ru.yandex.practicum.mymarket.service.CartService;
 import ru.yandex.practicum.mymarket.service.CatalogService;
 import ru.yandex.practicum.mymarket.service.OrderService;
+import ru.yandex.practicum.mymarket.service.PaymentGateway;
 
 @WebFluxTest
 class MarketControllerTest {
@@ -49,12 +50,17 @@ class MarketControllerTest {
     @MockitoBean
     private OrderService orders;
 
+    @MockitoBean
+    private PaymentGateway payments;
+
     @BeforeEach
     void emptyPublishers() {
         lenient().when(cart.change(anyString(), anyLong(), any())).thenReturn(Mono.empty());
         lenient().when(cart.lines(anyString())).thenReturn(Mono.just(List.of()));
         lenient().when(orders.list(anyString())).thenReturn(Mono.just(List.of()));
         lenient().when(orders.buy(anyString())).thenReturn(Mono.empty());
+        lenient().when(payments.balance()).thenReturn(Mono.just(1_000_000L));
+        lenient().when(payments.pay(anyLong())).thenReturn(Mono.empty());
     }
 
     @Test

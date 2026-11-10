@@ -51,6 +51,7 @@ import ru.yandex.practicum.mymarket.model.OrderItem;
 import ru.yandex.practicum.mymarket.service.CartService;
 import ru.yandex.practicum.mymarket.service.CatalogService;
 import ru.yandex.practicum.mymarket.service.OrderService;
+import ru.yandex.practicum.mymarket.service.PaymentGateway;
 
 @DataR2dbcTest(properties = {
         "spring.r2dbc.url=r2dbc:h2:mem:///market-test?options=DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;LOCK_TIMEOUT=10000",
@@ -68,7 +69,8 @@ import ru.yandex.practicum.mymarket.service.OrderService;
         ValidationAutoConfiguration.class,
         MarketPersistenceTest.FailSecondOrderItem.class,
         MarketPersistenceTest.PauseFirstWrite.class,
-        MarketPersistenceTest.CartStatementTracker.class
+        MarketPersistenceTest.CartStatementTracker.class,
+        MarketPersistenceTest.SuccessfulPayments.class
 })
 class MarketPersistenceTest {
 
@@ -564,6 +566,19 @@ class MarketPersistenceTest {
             public Mono<? extends Connection> create() {
                 return super.create().map(tracker::trackConnection);
             }
+        }
+    }
+
+    static class SuccessfulPayments implements PaymentGateway {
+
+        @Override
+        public Mono<Long> balance() {
+            return Mono.just(Long.MAX_VALUE);
+        }
+
+        @Override
+        public Mono<Void> pay(long amount) {
+            return Mono.empty();
         }
     }
 }
