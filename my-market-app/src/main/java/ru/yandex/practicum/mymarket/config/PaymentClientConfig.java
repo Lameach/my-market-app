@@ -38,12 +38,18 @@ public class PaymentClientConfig {
 
         @Override
         public Mono<Long> balance() {
-            return api.getBalance().map(Balance::getAmount).onErrorMap(OpenApiPaymentGateway::reject);
+            return api.getBalance()
+                    .map(Balance::getAmount)
+                    .switchIfEmpty(Mono.error(new PaymentRejectedException(new IllegalStateException("empty balance"))))
+                    .onErrorMap(OpenApiPaymentGateway::reject);
         }
 
         @Override
         public Mono<Void> pay(long amount) {
-            return api.pay(new PaymentRequest().amount(amount)).then().onErrorMap(OpenApiPaymentGateway::reject);
+            return api.pay(new PaymentRequest().amount(amount))
+                    .switchIfEmpty(Mono.error(new PaymentRejectedException(new IllegalStateException("empty payment"))))
+                    .then()
+                    .onErrorMap(OpenApiPaymentGateway::reject);
         }
 
         private static Throwable reject(Throwable failure) {

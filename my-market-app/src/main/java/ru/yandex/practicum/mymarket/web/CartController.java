@@ -10,7 +10,6 @@ import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.dto.ItemDto;
 import ru.yandex.practicum.mymarket.service.CartService;
 import ru.yandex.practicum.mymarket.service.PaymentGateway;
-import ru.yandex.practicum.mymarket.service.PaymentRejectedException;
 
 @Controller
 public class CartController {
@@ -47,7 +46,7 @@ public class CartController {
                         }
                         return "cart";
                     })
-                    .onErrorResume(PaymentRejectedException.class, ex -> {
+                    .onErrorResume(ex -> {
                         model.addAttribute("paymentMessage", UNAVAILABLE);
                         return Mono.just("cart");
                     });

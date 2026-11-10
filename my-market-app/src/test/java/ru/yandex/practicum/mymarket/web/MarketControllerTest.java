@@ -34,6 +34,7 @@ import ru.yandex.practicum.mymarket.service.CartService;
 import ru.yandex.practicum.mymarket.service.CatalogService;
 import ru.yandex.practicum.mymarket.service.OrderService;
 import ru.yandex.practicum.mymarket.service.PaymentGateway;
+import ru.yandex.practicum.mymarket.service.PaymentRejectedException;
 
 @WebFluxTest
 class MarketControllerTest {
@@ -186,7 +187,31 @@ class MarketControllerTest {
                 .value(body -> {
                     assertThat(body).contains("Купить");
                     assertThat(body).contains("Итого: 89 руб.");
+                    assertThat(body).doesNotContain("disabled");
                 });
+    }
+
+    @Test
+    void cartDisablesBuyWhenTheBalanceIsTooSmallOrPaymentsAreDown() {
+        ItemDto milk = new ItemDto(2, "Молоко", "1 л", "images/milk.png", 89, 1);
+        when(cart.lines(anyString())).thenReturn(Mono.just(List.of(milk)));
+        when(payments.balance()).thenReturn(Mono.just(10L));
+
+        webTestClient.get().uri("/cart/items")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .value(body -> {
+                    assertThat(body).contains("Недостаточно средств для оплаты заказа");
+                    assertThat(body).contains("disabled=\"disabled\"");
+                });
+
+        when(payments.balance()).thenReturn(Mono.error(new PaymentRejectedException(new IllegalStateException("down"))));
+        webTestClient.get().uri("/cart/items")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .value(body -> assertThat(body).contains("Сервис платежей недоступен"));
     }
 
     @Test
@@ -233,6 +258,12 @@ class MarketControllerTest {
                 .isEqualTo("/orders/7?newOrder=true");
 
         when(orders.buy(anyString())).thenReturn(Mono.empty());
+        assertThat(pathAndQuery(locationOf(webTestClient.post().uri("/buy")
+                .exchange()
+                .expectStatus().is3xxRedirection())))
+                .isEqualTo("/cart/items");
+
+        when(orders.buy(anyString())).thenReturn(Mono.error(new PaymentRejectedException(new IllegalStateException("down"))));
         assertThat(pathAndQuery(locationOf(webTestClient.post().uri("/buy")
                 .exchange()
                 .expectStatus().is3xxRedirection())))
