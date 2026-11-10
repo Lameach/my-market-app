@@ -3,13 +3,11 @@ package ru.yandex.practicum.mymarket.service;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.dto.CatalogPage;
 import ru.yandex.practicum.mymarket.dto.ItemDto;
 import ru.yandex.practicum.mymarket.dto.Paging;
@@ -34,29 +32,42 @@ public class CatalogService {
     }
 
     @Transactional(readOnly = true)
-    public CatalogPage show(String search, String sort, int pageSize, int pageNumber, String sessionId) {
+    public Mono<CatalogPage> show(String search, String sort, int pageSize, int pageNumber, String sessionId) {
         String normalizedSearch = search == null ? "" : search.trim();
         String normalizedSort = normalizeSort(sort);
         int size = pageSize < 1 ? DEFAULT_PAGE_SIZE : pageSize;
         int number = pageNumber < 1 ? DEFAULT_PAGE_NUMBER : pageNumber;
-        Page<Item> page = items.search(likePattern(normalizedSearch), pageRequest(number, size, normalizedSort));
-        Map<Long, Integer> counts = cart.counts(sessionId);
-        List<ItemDto> dtos = page.getContent().stream()
-                .map(item -> ItemDto.from(item, counts.getOrDefault(item.getId(), 0)))
-                .toList();
-        return new CatalogPage(
-                dtos,
-                new Paging(size, number, page.hasPrevious(), page.hasNext()),
-                normalizedSearch,
-                normalizedSort);
+        String pattern = likePattern(normalizedSearch);
+        long offset = (long) (number - 1) * size;
+        return Mono.zip(
+                        items.search(pattern, normalizedSort, size, offset).collectList(),
+                        items.countSearch(pattern),
+                        cart.counts(sessionId))
+                .map(tuple -> toPage(tuple.getT1(), tuple.getT2(), tuple.getT3(), size, number, normalizedSearch, normalizedSort));
     }
 
     @Transactional(readOnly = true)
-    public ItemDto item(long id, String sessionId) {
-        Item item = items.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        int count = cart.counts(sessionId).getOrDefault(id, 0);
-        return ItemDto.from(item, count);
+    public Mono<ItemDto> item(long id, String sessionId) {
+        return items.findById(id)
+                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND)))
+                .zipWith(cart.counts(sessionId))
+                .map(tuple -> ItemDto.from(tuple.getT1(), tuple.getT2().getOrDefault(id, 0)));
+    }
+
+    private static CatalogPage toPage(
+            List<Item> content,
+            long total,
+            Map<Long, Integer> counts,
+            int size,
+            int number,
+            String search,
+            String sort) {
+        List<ItemDto> dtos = content.stream()
+                .map(item -> ItemDto.from(item, counts.getOrDefault(item.getId(), 0)))
+                .toList();
+        boolean hasPrevious = number > 1;
+        boolean hasNext = (long) number * size < total;
+        return new CatalogPage(dtos, new Paging(size, number, hasPrevious, hasNext), search, sort);
     }
 
     static String normalizeSort(String sort) {
@@ -78,15 +89,4 @@ public class CatalogService {
         return "%" + escaped + "%";
     }
 
-    private static PageRequest pageRequest(int pageNumber, int pageSize, String sort) {
-        return PageRequest.of(pageNumber - 1, pageSize, toSort(sort));
-    }
-
-    private static Sort toSort(String sort) {
-        return switch (sort) {
-            case SORT_ALPHA -> Sort.by(Sort.Order.asc("title").ignoreCase()).and(Sort.by("id"));
-            case SORT_PRICE -> Sort.by(Sort.Order.asc("price")).and(Sort.by("id"));
-            default -> Sort.by("id");
-        };
-    }
 }

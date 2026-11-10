@@ -1,79 +1,96 @@
 package ru.yandex.practicum.mymarket.service;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.dto.OrderDto;
 import ru.yandex.practicum.mymarket.dto.OrderItemDto;
-import ru.yandex.practicum.mymarket.model.Cart;
 import ru.yandex.practicum.mymarket.model.CartItem;
+import ru.yandex.practicum.mymarket.model.Item;
 import ru.yandex.practicum.mymarket.model.Order;
 import ru.yandex.practicum.mymarket.model.OrderItem;
 import ru.yandex.practicum.mymarket.repository.CartItemRepository;
 import ru.yandex.practicum.mymarket.repository.CartRepository;
+import ru.yandex.practicum.mymarket.repository.ItemRepository;
+import ru.yandex.practicum.mymarket.repository.OrderItemRepository;
 import ru.yandex.practicum.mymarket.repository.OrderRepository;
 
 @Service
 public class OrderService {
 
     private final OrderRepository orders;
+    private final OrderItemRepository orderItems;
     private final CartRepository carts;
     private final CartItemRepository cartItems;
+    private final ItemRepository items;
 
-    public OrderService(OrderRepository orders, CartRepository carts, CartItemRepository cartItems) {
+    public OrderService(
+            OrderRepository orders,
+            OrderItemRepository orderItems,
+            CartRepository carts,
+            CartItemRepository cartItems,
+            ItemRepository items) {
         this.orders = orders;
+        this.orderItems = orderItems;
         this.carts = carts;
         this.cartItems = cartItems;
+        this.items = items;
     }
 
     @Transactional(readOnly = true)
-    public List<OrderDto> list(String sessionId) {
-        return orders.findBySessionIdOrderByIdDesc(sessionId).stream()
-                .map(OrderService::toDto)
-                .toList();
+    public Mono<List<OrderDto>> list(String sessionId) {
+        return orders.findBySessionIdOrderByIdDesc(sessionId)
+                .concatMap(this::toDto)
+                .collectList();
     }
 
     @Transactional(readOnly = true)
-    public OrderDto get(long id, String sessionId) {
+    public Mono<OrderDto> get(long id, String sessionId) {
         return orders.findByIdAndSessionId(id, sessionId)
-                .map(OrderService::toDto)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+                .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND)))
+                .flatMap(this::toDto);
     }
 
     @Transactional
-    public Optional<Long> buy(String sessionId) {
-        Cart cart = carts.findBySessionId(sessionId).orElse(null);
-        if (cart == null || cart.getItems().isEmpty()) {
-            return Optional.empty();
-        }
-        List<CartItem> lines = new ArrayList<>();
-        for (CartItem line : cart.getItems()) {
-            if (line.getCount() > 0) {
-                lines.add(line);
-            }
-        }
-        if (lines.isEmpty()) {
-            return Optional.empty();
-        }
-        Order order = new Order(sessionId);
-        for (CartItem line : lines) {
-            order.add(new OrderItem(line.getItem().getTitle(), line.getItem().getPrice(), line.getCount()));
-        }
-        Order saved = orders.save(order);
-        // The cart side is inverse: emptying the collection does not delete the rows.
-        cartItems.deleteAll(lines);
-        cart.getItems().clear();
-        return Optional.of(saved.getId());
+    public Mono<Long> buy(String sessionId) {
+        return carts.findBySessionIdForUpdate(sessionId)
+                .flatMap(cart -> cartItems.findByCartIdOrderByIdAsc(cart.getId())
+                        .filter(line -> line.getCount() > 0)
+                        .collectList()
+                        .flatMap(lines -> place(sessionId, lines)));
     }
 
-    private static OrderDto toDto(Order order) {
-        List<OrderItemDto> lines = order.getItems().stream()
-                .map(line -> new OrderItemDto(line.getId(), line.getTitle(), line.getPrice(), line.getCount()))
-                .toList();
-        return OrderDto.of(order.getId(), lines);
+    private Mono<Long> place(String sessionId, List<CartItem> lines) {
+        if (lines.isEmpty()) {
+            return Mono.empty();
+        }
+        List<Long> ids = lines.stream().map(CartItem::getItemId).toList();
+        return items.findAllById(ids)
+                .collectMap(Item::getId)
+                .flatMap(byId -> orders.save(new Order(sessionId))
+                        .flatMap(saved -> Flux.fromIterable(lines)
+                                .concatMap(line -> {
+                                    Item item = byId.get(line.getItemId());
+                                    return orderItems.save(new OrderItem(
+                                            saved.getId(),
+                                            item.getTitle(),
+                                            item.getImgPath(),
+                                            item.getPrice(),
+                                            line.getCount()));
+                                })
+                                .then(cartItems.deleteAll(lines))
+                                .thenReturn(saved.getId())));
+    }
+
+    private Mono<OrderDto> toDto(Order order) {
+        return orderItems.findByOrderIdOrderByIdAsc(order.getId())
+                .map(line -> new OrderItemDto(
+                        line.getId(), line.getTitle(), line.getImgPath(), line.getPrice(), line.getCount()))
+                .collectList()
+                .map(lines -> OrderDto.of(order.getId(), lines));
     }
 }

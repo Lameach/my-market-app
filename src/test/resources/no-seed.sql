@@ -1,0 +1,1 @@
+-- The persistence slice creates its own rows and does not load the storefront seed.

@@ -1,14 +1,15 @@
 package ru.yandex.practicum.mymarket.web;
 
-import jakarta.servlet.http.HttpSession;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.servlet.mvc.support.RedirectAttributes;
-import ru.yandex.practicum.mymarket.dto.CatalogPage;
+import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.WebSession;
+import org.springframework.web.util.UriComponentsBuilder;
+import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.service.CartService;
 import ru.yandex.practicum.mymarket.service.CatalogService;
 
@@ -24,53 +25,62 @@ public class ItemController {
     }
 
     @GetMapping({"/", "/items"})
-    public String items(
+    public Mono<String> items(
             @RequestParam(defaultValue = "") String search,
             @RequestParam(defaultValue = "NO") String sort,
             @RequestParam(defaultValue = "5") int pageSize,
             @RequestParam(defaultValue = "1") int pageNumber,
-            HttpSession session,
+            WebSession session,
             Model model) {
-        CatalogPage page = catalog.show(search, sort, pageSize, pageNumber, session.getId());
-        model.addAttribute("items", page.items());
-        model.addAttribute("search", page.search());
-        model.addAttribute("sort", page.sort());
-        model.addAttribute("paging", page.paging());
-        return "items";
+        session.start();
+        return catalog.show(search, sort, pageSize, pageNumber, session.getId())
+                .doOnNext(page -> {
+                    model.addAttribute("items", page.items());
+                    model.addAttribute("search", page.search());
+                    model.addAttribute("sort", page.sort());
+                    model.addAttribute("paging", page.paging());
+                })
+                .thenReturn("items");
     }
 
     @PostMapping("/items")
-    public String change(
-            @RequestParam long id,
-            @RequestParam String action,
-            @RequestParam(defaultValue = "") String search,
-            @RequestParam(defaultValue = "NO") String sort,
-            @RequestParam(defaultValue = "5") int pageSize,
-            @RequestParam(defaultValue = "1") int pageNumber,
-            HttpSession session,
-            RedirectAttributes redirectAttributes) {
-        cart.change(session.getId(), id, Actions.catalog(action));
-        redirectAttributes.addAttribute("search", search);
-        redirectAttributes.addAttribute("sort", sort);
-        redirectAttributes.addAttribute("pageSize", pageSize);
-        redirectAttributes.addAttribute("pageNumber", pageNumber);
-        return "redirect:/items";
+    public Mono<String> change(ServerWebExchange exchange, WebSession session) {
+        session.start();
+        return exchange.getFormData().flatMap(form -> {
+            long id = Forms.requiredLong(form, "id");
+            String search = Forms.text(form, "search", "");
+            String sort = Forms.text(form, "sort", "NO");
+            int pageSize = Forms.number(form, "pageSize", 5);
+            int pageNumber = Forms.number(form, "pageNumber", 1);
+            return cart.change(session.getId(), id, Actions.catalog(Forms.required(form, "action")))
+                    .thenReturn("redirect:" + catalogLocation(search, sort, pageSize, pageNumber));
+        });
     }
 
     @GetMapping("/items/{id}")
-    public String item(@PathVariable long id, HttpSession session, Model model) {
-        model.addAttribute("item", catalog.item(id, session.getId()));
-        return "item";
+    public Mono<String> item(@PathVariable long id, WebSession session, Model model) {
+        session.start();
+        return catalog.item(id, session.getId())
+                .doOnNext(found -> model.addAttribute("item", found))
+                .thenReturn("item");
     }
 
     @PostMapping("/items/{id}")
-    public String changeOne(
-            @PathVariable long id,
-            @RequestParam String action,
-            HttpSession session,
-            Model model) {
-        cart.change(session.getId(), id, Actions.catalog(action));
-        model.addAttribute("item", catalog.item(id, session.getId()));
-        return "item";
+    public Mono<String> changeOne(@PathVariable long id, ServerWebExchange exchange, WebSession session) {
+        session.start();
+        return exchange.getFormData().flatMap(form -> cart
+                .change(session.getId(), id, Actions.catalog(Forms.required(form, "action")))
+                .thenReturn("redirect:/items/" + id));
+    }
+
+    private static String catalogLocation(String search, String sort, int pageSize, int pageNumber) {
+        return UriComponentsBuilder.fromPath("/items")
+                .queryParam("search", search)
+                .queryParam("sort", sort)
+                .queryParam("pageSize", pageSize)
+                .queryParam("pageNumber", pageNumber)
+                .build()
+                .encode()
+                .toUriString();
     }
 }

@@ -1,13 +1,13 @@
 package ru.yandex.practicum.mymarket.repository;
 
-import java.util.List;
-import java.util.Optional;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.model.Order;
 
-public interface OrderRepository extends JpaRepository<Order, Long> {
+public interface OrderRepository extends ReactiveCrudRepository<Order, Long> {
 
-    List<Order> findBySessionIdOrderByIdDesc(String sessionId);
+    Flux<Order> findBySessionIdOrderByIdDesc(String sessionId);
 
-    Optional<Order> findByIdAndSessionId(long id, String sessionId);
+    Mono<Order> findByIdAndSessionId(long id, String sessionId);
 }

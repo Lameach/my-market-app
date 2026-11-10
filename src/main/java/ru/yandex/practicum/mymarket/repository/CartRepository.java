@@ -1,10 +1,15 @@
 package ru.yandex.practicum.mymarket.repository;
 
-import java.util.Optional;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.r2dbc.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.model.Cart;
 
-public interface CartRepository extends JpaRepository<Cart, Long> {
+public interface CartRepository extends ReactiveCrudRepository<Cart, Long> {
 
-    Optional<Cart> findBySessionId(String sessionId);
+    Mono<Cart> findBySessionId(String sessionId);
+
+    @Query("SELECT * FROM carts WHERE session_id = :sessionId FOR UPDATE")
+    Mono<Cart> findBySessionIdForUpdate(@Param("sessionId") String sessionId);
 }

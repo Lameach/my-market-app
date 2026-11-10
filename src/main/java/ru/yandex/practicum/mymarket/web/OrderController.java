@@ -1,12 +1,13 @@
 package ru.yandex.practicum.mymarket.web;
 
-import jakarta.servlet.http.HttpSession;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.server.WebSession;
+import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.service.OrderService;
 
 @Controller
@@ -19,26 +20,31 @@ public class OrderController {
     }
 
     @GetMapping("/orders")
-    public String orders(HttpSession session, Model model) {
-        model.addAttribute("orders", orders.list(session.getId()));
-        return "orders";
+    public Mono<String> orders(WebSession session, Model model) {
+        session.start();
+        return orders.list(session.getId())
+                .doOnNext(list -> model.addAttribute("orders", list))
+                .thenReturn("orders");
     }
 
     @GetMapping("/orders/{id}")
-    public String order(
+    public Mono<String> order(
             @PathVariable long id,
             @RequestParam(defaultValue = "false") boolean newOrder,
-            HttpSession session,
+            WebSession session,
             Model model) {
-        model.addAttribute("order", orders.get(id, session.getId()));
+        session.start();
         model.addAttribute("newOrder", newOrder);
-        return "order";
+        return orders.get(id, session.getId())
+                .doOnNext(order -> model.addAttribute("order", order))
+                .thenReturn("order");
     }
 
     @PostMapping("/buy")
-    public String buy(HttpSession session) {
+    public Mono<String> buy(WebSession session) {
+        session.start();
         return orders.buy(session.getId())
                 .map(id -> "redirect:/orders/" + id + "?newOrder=true")
-                .orElse("redirect:/cart/items");
+                .defaultIfEmpty("redirect:/cart/items");
     }
 }

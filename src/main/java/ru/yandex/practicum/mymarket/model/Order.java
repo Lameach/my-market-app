@@ -1,36 +1,28 @@
 package ru.yandex.practicum.mymarket.model;
 
-import jakarta.persistence.CascadeType;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.OneToMany;
-import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotBlank;
-import java.util.ArrayList;
-import java.util.List;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.PersistenceCreator;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
 
-@Entity
-@Table(name = "orders")
+@Table("orders")
 public class Order {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @NotBlank
-    @Column(name = "session_id", nullable = false, length = 128)
+    @Column("session_id")
     private String sessionId;
 
-    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<OrderItem> items = new ArrayList<>();
-
-    protected Order() {
+    public Order(String sessionId) {
+        this(null, sessionId);
     }
 
-    public Order(String sessionId) {
+    @PersistenceCreator
+    public Order(Long id, String sessionId) {
+        this.id = id;
         this.sessionId = sessionId;
     }
 
@@ -40,14 +32,5 @@ public class Order {
 
     public String getSessionId() {
         return sessionId;
-    }
-
-    public List<OrderItem> getItems() {
-        return items;
-    }
-
-    public void add(OrderItem line) {
-        items.add(line);
-        line.setOrder(this);
     }
 }
