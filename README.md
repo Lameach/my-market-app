@@ -1,6 +1,11 @@
 # Витрина магазина
 
-Витрина: каталог, корзина и заказ из корзины.
+Витрина: каталог, корзина и заказ из корзины. Заказ оплачивается в отдельном сервисе платежей. Список товаров и карточки читаются из Redis, при промахе загружаются из базы и кладутся в кеш на 2 минуты.
+
+Проект собирается как мультимодуль Maven:
+
+- `my-market-app` — витрина, порт 8080
+- `payment-service` — баланс и списание, порт 8081
 
 ## Стек
 
@@ -8,44 +13,65 @@
 - Spring Boot
 - Spring WebFlux
 - Thymeleaf
-- Spring Data R2DBC
-- H2 в памяти через r2dbc-h2
+- Spring Data R2DBC и H2 в памяти
+- Spring Data Redis, реактивный Lettuce
+- OpenAPI Generator: реактивный сервер платежей и WebClient витрины
 - Maven
-- JUnit 5
-- Spring Boot Test и WebTestClient
+- JUnit 5, Spring Boot Test и WebTestClient
 - встроенный Netty
-- исполняемый JAR
-- Docker
+- исполняемые JAR
+- Docker Compose
 
-## IDE
+## Сборка и тесты
 
-Откройте проект как Maven-проект и запустите `MyMarketAppApplication`.
-
-## Тесты
+Из корня репозитория:
 
 ```bash
 ./mvnw test
+./mvnw package
 ```
 
-## JAR
+Тесты витрины ходят в Redis на `localhost:6379`, база с номером 1. Сервис платежей для этих тестов не нужен: его заменяет `MockWebServer`. Свои тесты сервиса платежей поднимают только его контекст.
+
+## Локальный запуск
+
+Нужен Redis на `localhost:6379`. В двух терминалах:
 
 ```bash
-./mvnw -DskipTests package
-java -jar target/my-market-app-0.0.1-SNAPSHOT.jar
+./mvnw -pl payment-service spring-boot:run
+./mvnw -pl my-market-app spring-boot:run
 ```
+
+- Витрина: http://localhost:8080
+- Платежи: http://localhost:8081
+
+Стартовый баланс — 100000. Кнопка «Купить» активна, пока баланс не меньше суммы корзины и сервис платежей отвечает. Иначе кнопка недоступна и на странице корзины написано, чего не хватает: средств или самого сервиса.
 
 ## Docker
 
-Образ сам собирает JAR.
+Образ витрины собирается из корня:
 
 ```bash
 docker build -t my-market-app .
-docker run --rm -p 8080:8080 my-market-app
+docker run --rm -p 8080:8080 -e SPRING_DATA_REDIS_HOST=host.docker.internal -e PAYMENT_BASE_URL=http://host.docker.internal:8081 my-market-app
 ```
 
-Приложение: http://localhost:8080
+Образ платежей:
 
-## Эндпоинты
+```bash
+docker build -t payment-service -f payment-service/Dockerfile .
+docker run --rm -p 8081:8081 payment-service
+```
+
+Compose поднимает Redis, платежи и витрину. Redis остаётся внутри сети Compose и не занимает порт 6379 на хосте, так что уже запущенный локальный Redis не мешает.
+
+```bash
+docker compose up --build
+```
+
+Витрина: http://localhost:8080. Платежи: http://localhost:8081.
+
+## Эндпоинты витрины
 
 | Метод и путь | Что делает |
 | --- | --- |
@@ -53,8 +79,17 @@ docker run --rm -p 8080:8080 my-market-app
 | `POST /items` | Количество в каталоге: `PLUS`, `MINUS`. |
 | `GET /items/{id}` | Карточка товара. |
 | `POST /items/{id}` | Количество на карточке: `PLUS`, `MINUS`. |
-| `GET /cart/items` | Корзина. |
+| `GET /cart/items` | Корзина и проверка баланса. |
 | `POST /cart/items` | Строка корзины: `PLUS`, `MINUS`, `DELETE`. |
 | `GET /orders` | Список заказов. |
 | `GET /orders/{id}` | Один заказ. |
-| `POST /buy` | Оформить заказ из корзины. |
+| `POST /buy` | Списать сумму корзины и оформить заказ. |
+
+## Эндпоинты платежей
+
+Обмен в JSON, контракт в `openapi/payment-api.yaml`.
+
+| Метод и путь | Что делает |
+| --- | --- |
+| `GET /balance` | Текущий баланс: `{ "amount": 100000 }`. |
+| `POST /payments` | Списать `{ "amount": 129 }`. `200` и новый баланс, либо `402`, если списание ушло бы в минус. |

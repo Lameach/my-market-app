@@ -1,0 +1,21 @@
+services:
+  redis:
+    image: redis:7-alpine
+  payment-service:
+    build:
+      context: .
+      dockerfile: payment-service/Dockerfile
+    ports:
+      - "8081:8081"
+  my-market-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATA_REDIS_HOST: redis
+      PAYMENT_BASE_URL: http://payment-service:8081
+    depends_on:
+      - redis
+      - payment-service
