@@ -1,0 +1,87 @@
+openapi: 3.0.3
+info:
+  title: Payment API
+  version: 1.0.0
+  description: Balance and payment used by the storefront checkout.
+paths:
+  /balance:
+    get:
+      operationId: getBalance
+      tags:
+        - payments
+      summary: Current account balance
+      responses:
+        "200":
+          description: Current balance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Balance"
+  /payments:
+    post:
+      operationId: pay
+      tags:
+        - payments
+      summary: Charge the account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentRequest"
+      responses:
+        "200":
+          description: Payment accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentResult"
+        "400":
+          description: Amount must be positive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentError"
+        "402":
+          description: Insufficient funds
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentError"
+components:
+  schemas:
+    Balance:
+      type: object
+      required:
+        - amount
+      properties:
+        amount:
+          type: integer
+          format: int64
+    PaymentRequest:
+      type: object
+      required:
+        - amount
+      properties:
+        amount:
+          type: integer
+          format: int64
+          minimum: 1
+    PaymentResult:
+      type: object
+      required:
+        - success
+        - balance
+      properties:
+        success:
+          type: boolean
+        balance:
+          type: integer
+          format: int64
+    PaymentError:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
