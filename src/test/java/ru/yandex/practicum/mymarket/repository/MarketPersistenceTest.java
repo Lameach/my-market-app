@@ -2,15 +2,20 @@ package ru.yandex.practicum.mymarket.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import jakarta.validation.ConstraintViolationException;
 import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.reactivestreams.Publisher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.validation.ValidationAutoConfiguration;
 import org.springframework.boot.test.autoconfigure.data.r2dbc.DataR2dbcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.core.NestedExceptionUtils;
+import org.springframework.data.r2dbc.mapping.event.BeforeConvertCallback;
+import org.springframework.data.relational.core.sql.SqlIdentifier;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -19,8 +24,10 @@ import ru.yandex.practicum.mymarket.config.ValidateBeforeConvert;
 import ru.yandex.practicum.mymarket.dto.CatalogPage;
 import ru.yandex.practicum.mymarket.dto.ItemDto;
 import ru.yandex.practicum.mymarket.dto.OrderDto;
+import ru.yandex.practicum.mymarket.dto.OrderItemDto;
 import ru.yandex.practicum.mymarket.model.CartAction;
 import ru.yandex.practicum.mymarket.model.Item;
+import ru.yandex.practicum.mymarket.model.OrderItem;
 import ru.yandex.practicum.mymarket.service.CartService;
 import ru.yandex.practicum.mymarket.service.CatalogService;
 import ru.yandex.practicum.mymarket.service.OrderService;
@@ -38,7 +45,8 @@ import ru.yandex.practicum.mymarket.service.OrderService;
         CartService.class,
         OrderService.class,
         ValidateBeforeConvert.class,
-        ValidationAutoConfiguration.class
+        ValidationAutoConfiguration.class,
+        MarketPersistenceTest.FailSecondOrderItem.class
 })
 class MarketPersistenceTest {
 
@@ -68,8 +76,12 @@ class MarketPersistenceTest {
     @Autowired
     private OrderService orders;
 
+    @Autowired
+    private FailSecondOrderItem orderItemGate;
+
     @BeforeEach
     void clean() {
+        orderItemGate.reset();
         orderItems.deleteAll()
                 .then(ordersRepo.deleteAll())
                 .then(cartItems.deleteAll())
@@ -140,12 +152,12 @@ class MarketPersistenceTest {
 
         await(cart.change("one", apples.getId(), CartAction.MINUS));
         assertThat(await(cart.lines("one"))).isEmpty();
-        assertThat(await(cart.total("one"))).isZero();
+        assertThat(sum("one")).isZero();
 
         await(cart.change("one", apples.getId(), CartAction.PLUS));
         await(cart.change("one", apples.getId(), CartAction.PLUS));
         await(cart.change("one", milk.getId(), CartAction.PLUS));
-        assertThat(await(cart.total("one"))).isEqualTo(129 * 2 + 89);
+        assertThat(sum("one")).isEqualTo(129 * 2 + 89);
         assertThat(await(catalog.item(apples.getId(), "one")).count()).isEqualTo(2);
         assertThat(await(catalog.item(apples.getId(), "two")).count()).isZero();
 
@@ -180,12 +192,84 @@ class MarketPersistenceTest {
         assertThat(order.items()).extracting(item -> item.title()).containsExactly("Яблоки", "Молоко");
         assertThat(order.items()).extracting(item -> item.count()).containsExactly(2, 1);
         assertThat(order.items().get(0).price()).isEqualTo(129);
-        assertThat(order.totalSum()).isEqualTo(129 * 2 + 89);
+        assertThat(order.items().get(0).imgPath()).isEqualTo("images/Яблоки.png");
+        assertThat(order.totalSum()).isEqualTo(129L * 2 + 89);
         assertThat(await(cart.lines("buyer"))).isEmpty();
         assertThat(await(orders.buy("buyer"))).isNull();
         assertThat(await(orders.list("buyer"))).extracting(OrderDto::id).containsExactly(orderId);
         assertThat(await(orders.list("other"))).isEmpty();
         assertThatThrownBy(() -> await(orders.get(orderId, "other"))).isInstanceOf(ResponseStatusException.class);
+    }
+
+    @Test
+    void twoConcurrentPlusOnAnExistingLineBothCount() {
+        Item apples = save("Яблоки", "сладкие", 129);
+        await(cart.change("one", apples.getId(), CartAction.PLUS));
+
+        Mono.when(
+                        cart.change("one", apples.getId(), CartAction.PLUS),
+                        cart.change("one", apples.getId(), CartAction.PLUS))
+                .block(TIMEOUT);
+
+        assertThat(await(cartItems.count())).isEqualTo(1);
+        assertThat(await(cart.lines("one"))).extracting(ItemDto::count).containsExactly(3);
+
+        await(cart.change("one", apples.getId(), CartAction.PLUS));
+        assertThat(await(cart.lines("one"))).extracting(ItemDto::count).containsExactly(4);
+    }
+
+    @Test
+    void twoConcurrentFirstPlusCreateOneLine() {
+        Item apples = save("Яблоки", "сладкие", 129);
+
+        Mono.when(
+                        cart.change("fresh", apples.getId(), CartAction.PLUS),
+                        cart.change("fresh", apples.getId(), CartAction.PLUS))
+                .block(TIMEOUT);
+
+        assertThat(await(carts.count())).isEqualTo(1);
+        assertThat(await(cartItems.count())).isEqualTo(1);
+        assertThat(await(cart.lines("fresh"))).extracting(ItemDto::count).containsExactly(2);
+
+        await(cart.change("fresh", apples.getId(), CartAction.MINUS));
+        assertThat(await(cart.lines("fresh"))).extracting(ItemDto::count).containsExactly(1);
+    }
+
+    @Test
+    void twoConcurrentBuysCreateOneOrder() {
+        Item apples = save("Яблоки", "сладкие", 129);
+        Item milk = save("Молоко", "литр", 89);
+        await(cart.change("buyer", apples.getId(), CartAction.PLUS));
+        await(cart.change("buyer", apples.getId(), CartAction.PLUS));
+        await(cart.change("buyer", milk.getId(), CartAction.PLUS));
+
+        Mono.when(orders.buy("buyer"), orders.buy("buyer")).block(TIMEOUT);
+
+        assertThat(await(ordersRepo.count())).isEqualTo(1);
+        assertThat(await(orders.list("buyer"))).singleElement().satisfies(order -> assertThat(order.items())
+                .extracting(OrderItemDto::title, OrderItemDto::count)
+                .containsExactly(tuple("Яблоки", 2), tuple("Молоко", 1)));
+        assertThat(await(cart.lines("buyer"))).isEmpty();
+    }
+
+    @Test
+    void buyRollsBackWhenTheSecondLineIsNotSaved() {
+        Item first = save("Товар 1", "a", 10);
+        Item second = save("Товар 2", "b", 20);
+        await(cart.change("buyer", first.getId(), CartAction.PLUS));
+        await(cart.change("buyer", second.getId(), CartAction.PLUS));
+        await(cart.change("buyer", second.getId(), CartAction.PLUS));
+        orderItemGate.failOnSecondSave();
+
+        assertThatThrownBy(() -> await(orders.buy("buyer")))
+                .satisfies(thrown -> assertThat(NestedExceptionUtils.getMostSpecificCause(thrown))
+                        .isInstanceOf(IllegalStateException.class));
+
+        assertThat(await(ordersRepo.count())).isZero();
+        assertThat(await(orderItems.count())).isZero();
+        assertThat(await(cart.lines("buyer")))
+                .extracting(ItemDto::title, ItemDto::count)
+                .containsExactly(tuple("Товар 1", 1), tuple("Товар 2", 2));
     }
 
     @Test
@@ -205,7 +289,36 @@ class MarketPersistenceTest {
                 .blockFirst(TIMEOUT);
     }
 
+    private long sum(String sessionId) {
+        return await(cart.lines(sessionId)).stream().mapToLong(ItemDto::sum).sum();
+    }
+
     private static <T> T await(Mono<T> mono) {
         return mono.block(TIMEOUT);
+    }
+
+    public static class FailSecondOrderItem implements BeforeConvertCallback<OrderItem> {
+
+        private int seen;
+        private boolean failSecond;
+
+        void reset() {
+            seen = 0;
+            failSecond = false;
+        }
+
+        void failOnSecondSave() {
+            seen = 0;
+            failSecond = true;
+        }
+
+        @Override
+        public Publisher<OrderItem> onBeforeConvert(OrderItem entity, SqlIdentifier table) {
+            seen++;
+            if (failSecond && seen >= 2) {
+                return Mono.error(new IllegalStateException("second line"));
+            }
+            return Mono.just(entity);
+        }
     }
 }

@@ -20,6 +20,10 @@ public class OrderItem {
     @NotBlank
     private String title;
 
+    @NotBlank
+    @Column("img_path")
+    private String imgPath;
+
     @PositiveOrZero
     private int price;
 
@@ -27,15 +31,16 @@ public class OrderItem {
     @Column("item_count")
     private int count;
 
-    public OrderItem(Long orderId, String title, int price, int count) {
-        this(null, orderId, title, price, count);
+    public OrderItem(Long orderId, String title, String imgPath, int price, int count) {
+        this(null, orderId, title, imgPath, price, count);
     }
 
     @PersistenceCreator
-    public OrderItem(Long id, Long orderId, String title, int price, int count) {
+    public OrderItem(Long id, Long orderId, String title, String imgPath, int price, int count) {
         this.id = id;
         this.orderId = orderId;
         this.title = title;
+        this.imgPath = imgPath;
         this.price = price;
         this.count = count;
     }
@@ -50,6 +55,10 @@ public class OrderItem {
 
     public String getTitle() {
         return title;
+    }
+
+    public String getImgPath() {
+        return imgPath;
     }
 
     public int getPrice() {

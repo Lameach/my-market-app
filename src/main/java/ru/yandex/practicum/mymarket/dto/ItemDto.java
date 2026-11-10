@@ -13,4 +13,8 @@ public record ItemDto(long id, String title, String description, String imgPath,
                 item.getPrice(),
                 count);
     }
+
+    public long sum() {
+        return (long) price * count;
+    }
 }

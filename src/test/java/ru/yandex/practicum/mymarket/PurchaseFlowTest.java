@@ -83,28 +83,14 @@ class PurchaseFlowTest {
         Item apples = item("Яблоки Гала");
         WebTestClient client = browser();
 
-        client.post().uri("/items/{id}", apples.getId())
-                .body(BodyInserters.fromFormData("action", "MINUS"))
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody(String.class)
-                .value(body -> assertThat(body).contains(">0<"));
-
-        client.post().uri("/items/{id}", apples.getId())
-                .body(BodyInserters.fromFormData("action", "PLUS"))
-                .exchange()
-                .expectBody(String.class)
-                .value(body -> assertThat(body).contains(">1<"));
-        client.post().uri("/items/{id}", apples.getId())
-                .body(BodyInserters.fromFormData("action", "MINUS"))
-                .exchange()
-                .expectBody(String.class)
-                .value(body -> assertThat(body).contains(">0<"));
-        client.post().uri("/items/{id}", apples.getId())
-                .body(BodyInserters.fromFormData("action", "MINUS"))
-                .exchange()
-                .expectBody(String.class)
-                .value(body -> assertThat(body).contains(">0<"));
+        postItem(client, apples.getId(), "MINUS");
+        expectCount(client, apples.getId(), ">0<");
+        postItem(client, apples.getId(), "PLUS");
+        expectCount(client, apples.getId(), ">1<");
+        postItem(client, apples.getId(), "MINUS");
+        expectCount(client, apples.getId(), ">0<");
+        postItem(client, apples.getId(), "MINUS");
+        expectCount(client, apples.getId(), ">0<");
     }
 
     @Test
@@ -118,14 +104,8 @@ class PurchaseFlowTest {
                 .expectStatus().is3xxRedirection())))
                 .isEqualTo("/cart/items");
 
-        client.post().uri("/items/{id}", apples.getId())
-                .body(BodyInserters.fromFormData("action", "PLUS"))
-                .exchange()
-                .expectStatus().isOk();
-        client.post().uri("/items/{id}", apples.getId())
-                .body(BodyInserters.fromFormData("action", "PLUS"))
-                .exchange()
-                .expectStatus().isOk();
+        postItem(client, apples.getId(), "PLUS");
+        postItem(client, apples.getId(), "PLUS");
 
         String backToCatalog = locationOf(client.post().uri("/items")
                 .body(BodyInserters.fromFormData("id", milk.getId().toString())
@@ -153,6 +133,8 @@ class PurchaseFlowTest {
                     assertThat(body).contains("Яблоки Гала");
                     assertThat(body).contains("Молоко 3,2%");
                     assertThat(body).contains("2 шт.");
+                    assertThat(body).contains("src=\"/images/apples.png\"");
+                    assertThat(body).contains("src=\"/images/milk.png\"");
                     assertThat(body).contains("Сумма: " + (129 * 2 + 89));
                 });
 
@@ -211,6 +193,22 @@ class PurchaseFlowTest {
                 .blockFirst(TIMEOUT);
         assertThat(found).isNotNull();
         return found;
+    }
+
+    private static void postItem(WebTestClient client, long id, String action) {
+        String location = locationOf(client.post().uri("/items/{id}", id)
+                .body(BodyInserters.fromFormData("action", action))
+                .exchange()
+                .expectStatus().is3xxRedirection());
+        assertThat(pathAndQuery(location)).isEqualTo("/items/" + id);
+    }
+
+    private static void expectCount(WebTestClient client, long id, String marker) {
+        client.get().uri("/items/{id}", id)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .value(body -> assertThat(body).contains(marker));
     }
 
     private static String locationOf(WebTestClient.ResponseSpec response) {

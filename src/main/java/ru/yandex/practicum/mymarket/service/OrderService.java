@@ -57,7 +57,7 @@ public class OrderService {
 
     @Transactional
     public Mono<Long> buy(String sessionId) {
-        return carts.findBySessionId(sessionId)
+        return carts.findBySessionIdForUpdate(sessionId)
                 .flatMap(cart -> cartItems.findByCartIdOrderByIdAsc(cart.getId())
                         .filter(line -> line.getCount() > 0)
                         .collectList()
@@ -76,7 +76,11 @@ public class OrderService {
                                 .concatMap(line -> {
                                     Item item = byId.get(line.getItemId());
                                     return orderItems.save(new OrderItem(
-                                            saved.getId(), item.getTitle(), item.getPrice(), line.getCount()));
+                                            saved.getId(),
+                                            item.getTitle(),
+                                            item.getImgPath(),
+                                            item.getPrice(),
+                                            line.getCount()));
                                 })
                                 .then(cartItems.deleteAll(lines))
                                 .thenReturn(saved.getId())));
@@ -84,7 +88,8 @@ public class OrderService {
 
     private Mono<OrderDto> toDto(Order order) {
         return orderItems.findByOrderIdOrderByIdAsc(order.getId())
-                .map(line -> new OrderItemDto(line.getId(), line.getTitle(), line.getPrice(), line.getCount()))
+                .map(line -> new OrderItemDto(
+                        line.getId(), line.getTitle(), line.getImgPath(), line.getPrice(), line.getCount()))
                 .collectList()
                 .map(lines -> OrderDto.of(order.getId(), lines));
     }

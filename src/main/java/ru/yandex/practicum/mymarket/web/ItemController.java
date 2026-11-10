@@ -66,18 +66,11 @@ public class ItemController {
     }
 
     @PostMapping("/items/{id}")
-    public Mono<String> changeOne(
-            @PathVariable long id,
-            ServerWebExchange exchange,
-            WebSession session,
-            Model model) {
+    public Mono<String> changeOne(@PathVariable long id, ServerWebExchange exchange, WebSession session) {
         session.start();
-        String sessionId = session.getId();
         return exchange.getFormData().flatMap(form -> cart
-                .change(sessionId, id, Actions.catalog(Forms.required(form, "action")))
-                .then(catalog.item(id, sessionId))
-                .doOnNext(found -> model.addAttribute("item", found))
-                .thenReturn("item"));
+                .change(session.getId(), id, Actions.catalog(Forms.required(form, "action")))
+                .thenReturn("redirect:/items/" + id));
     }
 
     private static String catalogLocation(String search, String sort, int pageSize, int pageNumber) {

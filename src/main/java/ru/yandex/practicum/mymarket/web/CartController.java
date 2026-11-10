@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebSession;
 import reactor.core.publisher.Mono;
+import ru.yandex.practicum.mymarket.dto.ItemDto;
 import ru.yandex.practicum.mymarket.service.CartService;
 
 @Controller
@@ -22,10 +23,10 @@ public class CartController {
     public Mono<String> cart(WebSession session, Model model) {
         session.start();
         String sessionId = session.getId();
-        return Mono.zip(cart.lines(sessionId), cart.total(sessionId))
-                .doOnNext(tuple -> {
-                    model.addAttribute("items", tuple.getT1());
-                    model.addAttribute("total", tuple.getT2());
+        return cart.lines(sessionId)
+                .doOnNext(items -> {
+                    model.addAttribute("items", items);
+                    model.addAttribute("total", items.stream().mapToLong(ItemDto::sum).sum());
                 })
                 .thenReturn("cart");
     }

@@ -53,7 +53,6 @@ class MarketControllerTest {
     void emptyPublishers() {
         lenient().when(cart.change(anyString(), anyLong(), any())).thenReturn(Mono.empty());
         lenient().when(cart.lines(anyString())).thenReturn(Mono.just(List.of()));
-        lenient().when(cart.total(anyString())).thenReturn(Mono.just(0));
         lenient().when(orders.list(anyString())).thenReturn(Mono.just(List.of()));
         lenient().when(orders.buy(anyString())).thenReturn(Mono.empty());
     }
@@ -120,8 +119,13 @@ class MarketControllerTest {
                 .expectBody(String.class)
                 .value(body -> assertThat(body).contains("Сыр"));
 
-        webTestClient.post().uri("/items/4")
+        String location = locationOf(webTestClient.post().uri("/items/4")
                 .body(BodyInserters.fromFormData("action", "MINUS"))
+                .exchange()
+                .expectStatus().is3xxRedirection());
+        assertThat(pathAndQuery(location)).isEqualTo("/items/4");
+
+        webTestClient.get().uri("/items/4")
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(String.class)
@@ -168,7 +172,6 @@ class MarketControllerTest {
     void cartWithItemsShowsBuy() {
         ItemDto milk = new ItemDto(2, "Молоко", "1 л", "images/milk.png", 89, 1);
         when(cart.lines(anyString())).thenReturn(Mono.just(List.of(milk)));
-        when(cart.total(anyString())).thenReturn(Mono.just(89));
 
         webTestClient.get().uri("/cart/items")
                 .exchange()
@@ -182,7 +185,7 @@ class MarketControllerTest {
 
     @Test
     void ordersAndNewOrderFlag() {
-        OrderItemDto line = new OrderItemDto(8, "Молоко", 89, 2);
+        OrderItemDto line = new OrderItemDto(8, "Молоко", "images/milk.png", 89, 2);
         OrderDto order = OrderDto.of(5, List.of(line));
         when(orders.list(anyString())).thenReturn(Mono.just(List.of(order)));
         when(orders.get(eq(5L), anyString())).thenReturn(Mono.just(order));
@@ -201,7 +204,12 @@ class MarketControllerTest {
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(String.class)
-                .value(body -> assertThat(body).doesNotContain("Поздравляем"));
+                .value(body -> {
+                    assertThat(body).doesNotContain("Поздравляем");
+                    assertThat(body).contains("src=\"/images/milk.png\"");
+                    assertThat(body).contains("Молоко");
+                    assertThat(body).contains("89 руб.");
+                });
 
         webTestClient.get().uri(builder -> builder.path("/orders/5").queryParam("newOrder", "true").build())
                 .exchange()

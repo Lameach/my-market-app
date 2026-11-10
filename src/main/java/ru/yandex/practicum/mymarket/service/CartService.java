@@ -2,9 +2,12 @@ package ru.yandex.practicum.mymarket.service;
 
 import java.util.List;
 import java.util.Map;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.ReactiveTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.reactive.TransactionalOperator;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.dto.ItemDto;
@@ -22,11 +25,17 @@ public class CartService {
     private final CartRepository carts;
     private final CartItemRepository cartItems;
     private final ItemRepository items;
+    private final TransactionalOperator transactions;
 
-    public CartService(CartRepository carts, CartItemRepository cartItems, ItemRepository items) {
+    public CartService(
+            CartRepository carts,
+            CartItemRepository cartItems,
+            ItemRepository items,
+            ReactiveTransactionManager transactionManager) {
         this.carts = carts;
         this.cartItems = cartItems;
         this.items = items;
+        this.transactions = TransactionalOperator.create(transactionManager);
     }
 
     @Transactional(readOnly = true)
@@ -45,16 +54,19 @@ public class CartService {
                 .defaultIfEmpty(List.of());
     }
 
-    @Transactional(readOnly = true)
-    public Mono<Integer> total(String sessionId) {
-        return lines(sessionId).map(rows -> rows.stream().mapToInt(line -> line.price() * line.count()).sum());
+    public Mono<Void> change(String sessionId, long itemId, CartAction action) {
+        return once(sessionId, itemId, action)
+                .onErrorResume(DuplicateKeyException.class, ex -> once(sessionId, itemId, action));
     }
 
-    @Transactional
-    public Mono<Void> change(String sessionId, long itemId, CartAction action) {
+    private Mono<Void> once(String sessionId, long itemId, CartAction action) {
+        return transactions.transactional(changeLocked(sessionId, itemId, action));
+    }
+
+    private Mono<Void> changeLocked(String sessionId, long itemId, CartAction action) {
         return items.findById(itemId)
                 .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND)))
-                .flatMap(item -> carts.findBySessionId(sessionId)
+                .flatMap(item -> carts.findBySessionIdForUpdate(sessionId)
                         .switchIfEmpty(Mono.defer(() -> action == CartAction.PLUS
                                 ? carts.save(new Cart(sessionId))
                                 : Mono.empty()))
