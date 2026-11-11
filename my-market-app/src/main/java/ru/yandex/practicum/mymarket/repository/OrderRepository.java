@@ -7,7 +7,7 @@ import ru.yandex.practicum.mymarket.model.Order;
 
 public interface OrderRepository extends ReactiveCrudRepository<Order, Long> {
 
-    Flux<Order> findBySessionIdOrderByIdDesc(String sessionId);
+    Flux<Order> findByUserIdOrderByIdDesc(long userId);
 
-    Mono<Order> findByIdAndSessionId(long id, String sessionId);
+    Mono<Order> findByIdAndUserId(long id, long userId);
 }

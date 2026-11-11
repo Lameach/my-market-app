@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="utf-8">
+    <title>Вход</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+</head>
+
+<body class="bg-light">
+    <div class="container p-2">
+        <div class="row p-2">
+            <div class="col">
+                <div th:replace="~{fragments/header :: bar(true)}"></div>
+            </div>
+        </div>
+        <div class="row p-2">
+            <div class="col-md-6">
+                <h2>Вход</h2>
+                <p class="text-danger" th:if="${loginError}">Неверный логин или пароль</p>
+                <p th:if="${loggedOut}">Вы вышли из магазина</p>
+                <form th:action="@{/login}" method="post">
+                    <div class="mb-3">
+                        <label class="form-label" for="username">Логин</label>
+                        <input class="form-control" id="username" name="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="password">Пароль</label>
+                        <input class="form-control" id="password" name="password" type="password" required>
+                    </div>
+                    <button class="btn btn-success" type="submit">Войти</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

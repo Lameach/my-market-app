@@ -12,13 +12,7 @@
     <div class="container p-2">
         <div class="row p-2">
             <div class="col">
-                <div class="hstack gap-3">
-                    <h2>
-                        <span class="badge text-bg-success">Витрина магазина</span>
-                    </h2>
-                    <a href="/cart/items" class="btn btn-secondary bi bi-cart4 ms-auto"> Корзина</a>
-                    <a href="/items" class="btn btn-secondary bi bi-arrow-left-square"> Главная</a>
-                </div>
+                <div th:replace="~{fragments/header :: bar(true)}"></div>
             </div>
         </div>
         <div class="row p-2" th:each="order : ${orders}">

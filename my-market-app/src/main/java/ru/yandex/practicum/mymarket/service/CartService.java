@@ -39,36 +39,36 @@ public class CartService {
     }
 
     @Transactional(readOnly = true)
-    public Mono<Map<Long, Integer>> counts(String sessionId) {
-        return carts.findBySessionId(sessionId)
+    public Mono<Map<Long, Integer>> counts(long userId) {
+        return carts.findByUserId(userId)
                 .flatMap(cart -> cartItems.findByCartIdOrderByIdAsc(cart.getId())
                         .collectMap(CartItem::getItemId, CartItem::getCount))
                 .defaultIfEmpty(Map.of());
     }
 
     @Transactional(readOnly = true)
-    public Mono<List<ItemDto>> lines(String sessionId) {
-        return carts.findBySessionId(sessionId)
+    public Mono<List<ItemDto>> lines(long userId) {
+        return carts.findByUserId(userId)
                 .flatMap(cart -> cartItems.findByCartIdOrderByIdAsc(cart.getId()).collectList())
                 .flatMap(this::toLines)
                 .defaultIfEmpty(List.of());
     }
 
-    public Mono<Void> change(String sessionId, long itemId, CartAction action) {
-        return once(sessionId, itemId, action)
-                .onErrorResume(DuplicateKeyException.class, ex -> once(sessionId, itemId, action));
+    public Mono<Void> change(long userId, long itemId, CartAction action) {
+        return once(userId, itemId, action)
+                .onErrorResume(DuplicateKeyException.class, ex -> once(userId, itemId, action));
     }
 
-    private Mono<Void> once(String sessionId, long itemId, CartAction action) {
-        return transactions.transactional(changeLocked(sessionId, itemId, action));
+    private Mono<Void> once(long userId, long itemId, CartAction action) {
+        return transactions.transactional(changeLocked(userId, itemId, action));
     }
 
-    private Mono<Void> changeLocked(String sessionId, long itemId, CartAction action) {
+    private Mono<Void> changeLocked(long userId, long itemId, CartAction action) {
         return items.card(itemId)
                 .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND)))
-                .flatMap(item -> carts.findBySessionIdForUpdate(sessionId)
+                .flatMap(item -> carts.findByUserIdForUpdate(userId)
                         .switchIfEmpty(Mono.defer(() -> action == CartAction.PLUS
-                                ? carts.save(new Cart(sessionId))
+                                ? carts.save(new Cart(userId))
                                 : Mono.empty()))
                         .flatMap(cart -> apply(cart, item, action)))
                 .then();

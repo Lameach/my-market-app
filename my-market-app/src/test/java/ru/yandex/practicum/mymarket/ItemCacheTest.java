@@ -6,7 +6,6 @@ import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
-import org.springframework.http.ResponseCookie;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.BodyInserters;
 import ru.yandex.practicum.mymarket.cache.RedisItemLookup;
@@ -32,7 +31,7 @@ class ItemCacheTest extends StorefrontSpringTest {
         int original = apples.getPrice();
         String cached = original + " руб.";
         String changed = "7 руб.";
-        WebTestClient client = browser();
+        WebTestClient client = login(webTestClient, "buyer", "buyer");
         try {
             client.get().uri("/items/{id}", apples.getId())
                     .exchange()
@@ -88,18 +87,6 @@ class ItemCacheTest extends StorefrontSpringTest {
             items.save(apples).block(TIMEOUT);
             redis.delete(RedisItemLookup.CATALOG_KEY, RedisItemLookup.ITEM_PREFIX + apples.getId()).block(TIMEOUT);
         }
-    }
-
-    private WebTestClient browser() {
-        ResponseCookie cookie = webTestClient.get().uri("/cart/items")
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody()
-                .returnResult()
-                .getResponseCookies()
-                .getFirst("SESSION");
-        assertThat(cookie).isNotNull();
-        return webTestClient.mutate().defaultCookie("SESSION", cookie.getValue()).build();
     }
 
     private Item item(String title) {

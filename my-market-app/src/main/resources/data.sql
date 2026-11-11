@@ -2,7 +2,13 @@ DELETE FROM order_items;
 DELETE FROM orders;
 DELETE FROM cart_items;
 DELETE FROM carts;
+DELETE FROM users;
 DELETE FROM items;
+
+INSERT INTO users (username, password, enabled) VALUES
+('buyer', '$2a$10$e9NZHI4CB8ij9MBT96bJjuIFwAqx160JzcmsKXl4eCrDKswASVpem', TRUE),
+('second', '$2a$10$qAFPjU37Cm0ztDTkIr7uMuZX5cbxYbw9gAqYBP8DIL.Jr9zDYMT2O', TRUE);
+
 
 INSERT INTO items (title, description, img_path, price) VALUES
 ('Яблоки Гала', 'Сладкие красные яблоки, 1 кг', 'images/apples.png', 129),
