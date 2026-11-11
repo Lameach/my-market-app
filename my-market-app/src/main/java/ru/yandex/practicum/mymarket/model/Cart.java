@@ -1,6 +1,6 @@
 package ru.yandex.practicum.mymarket.model;
 
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.PersistenceCreator;
 import org.springframework.data.relational.core.mapping.Column;
@@ -12,25 +12,25 @@ public class Cart {
     @Id
     private Long id;
 
-    @NotBlank
-    @Column("session_id")
-    private String sessionId;
+    @NotNull
+    @Column("user_id")
+    private Long userId;
 
-    public Cart(String sessionId) {
-        this(null, sessionId);
+    public Cart(long userId) {
+        this(null, userId);
     }
 
     @PersistenceCreator
-    public Cart(Long id, String sessionId) {
+    public Cart(Long id, Long userId) {
         this.id = id;
-        this.sessionId = sessionId;
+        this.userId = userId;
     }
 
     public Long getId() {
         return id;
     }
 
-    public String getSessionId() {
-        return sessionId;
+    public Long getUserId() {
+        return userId;
     }
 }

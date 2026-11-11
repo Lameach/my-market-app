@@ -8,8 +8,8 @@ import ru.yandex.practicum.mymarket.model.Cart;
 
 public interface CartRepository extends ReactiveCrudRepository<Cart, Long> {
 
-    Mono<Cart> findBySessionId(String sessionId);
+    Mono<Cart> findByUserId(long userId);
 
-    @Query("SELECT * FROM carts WHERE session_id = :sessionId FOR UPDATE")
-    Mono<Cart> findBySessionIdForUpdate(@Param("sessionId") String sessionId);
+    @Query("SELECT * FROM carts WHERE user_id = :userId FOR UPDATE")
+    Mono<Cart> findByUserIdForUpdate(@Param("userId") long userId);
 }

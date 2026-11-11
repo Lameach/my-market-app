@@ -34,25 +34,28 @@ public class CatalogService {
     }
 
     @Transactional(readOnly = true)
-    public Mono<CatalogPage> show(String search, String sort, int pageSize, int pageNumber, String sessionId) {
+    public Mono<CatalogPage> show(String search, String sort, int pageSize, int pageNumber, Long userId) {
         String normalizedSearch = search == null ? "" : search.trim();
         String normalizedSort = normalizeSort(sort);
         int size = pageSize < 1 ? DEFAULT_PAGE_SIZE : pageSize;
         int number = pageNumber < 1 ? DEFAULT_PAGE_NUMBER : pageNumber;
         String needle = normalizedSearch.toLowerCase(Locale.ROOT);
+        Mono<Map<Long, Integer>> counts = userId == null ? Mono.just(Map.of()) : cart.counts(userId);
         return items.catalog()
                 .map(all -> select(all, needle, normalizedSort, size, number))
                 .flatMap(selection -> Mono.zip(
                         items.cards(selection.entries().stream().map(CatalogEntry::id).toList()),
-                        cart.counts(sessionId),
-                        (cards, counts) -> toPage(selection, cards, counts, size, number, normalizedSearch, normalizedSort)));
+                        counts,
+                        (cards, countMap) -> toPage(
+                                selection, cards, countMap, size, number, normalizedSearch, normalizedSort)));
     }
 
     @Transactional(readOnly = true)
-    public Mono<ItemDto> item(long id, String sessionId) {
+    public Mono<ItemDto> item(long id, Long userId) {
+        Mono<Map<Long, Integer>> counts = userId == null ? Mono.just(Map.of()) : cart.counts(userId);
         return items.card(id)
                 .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND)))
-                .zipWith(cart.counts(sessionId))
+                .zipWith(counts)
                 .map(tuple -> ItemDto.from(tuple.getT1(), tuple.getT2().getOrDefault(id, 0)));
     }
 

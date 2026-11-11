@@ -6,13 +6,14 @@ import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseCookie;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.BodyInserters;
 import ru.yandex.practicum.mymarket.model.Item;
 import ru.yandex.practicum.mymarket.repository.ItemRepository;
+import ru.yandex.practicum.mymarket.repository.UserRepository;
 
 class PurchaseFlowTest extends StorefrontSpringTest {
 
@@ -23,6 +24,9 @@ class PurchaseFlowTest extends StorefrontSpringTest {
 
     @Autowired
     private ItemRepository items;
+
+    @Autowired
+    private UserRepository users;
 
     @Test
     void catalogOpensWithSeededProducts() {
@@ -63,21 +67,19 @@ class PurchaseFlowTest extends StorefrontSpringTest {
 
         webTestClient.get().uri("/orders")
                 .exchange()
-                .expectStatus().isOk()
-                .expectBody(String.class)
-                .value(body -> assertThat(body).doesNotContain("Заказ №"));
+                .expectStatus().isFound()
+                .expectHeader().value("Location", location -> assertThat(location).endsWith("/login"));
 
         webTestClient.get().uri("/cart/items")
                 .exchange()
-                .expectStatus().isOk()
-                .expectBody(String.class)
-                .value(body -> assertThat(body).doesNotContain("Купить"));
+                .expectStatus().isFound()
+                .expectHeader().value("Location", location -> assertThat(location).endsWith("/login"));
     }
 
     @Test
     void countDoesNotDropBelowZero() {
         Item apples = item("Яблоки Гала");
-        WebTestClient client = browser();
+        WebTestClient client = login(webTestClient, "buyer", "buyer");
 
         postItem(client, apples.getId(), "MINUS");
         expectCount(client, apples.getId(), ">0<");
@@ -93,7 +95,7 @@ class PurchaseFlowTest extends StorefrontSpringTest {
     void buyingSnapshotsTheCartClearsItAndOpensTheOrder() {
         Item apples = item("Яблоки Гала");
         Item milk = item("Молоко 3,2%");
-        WebTestClient client = browser();
+        WebTestClient client = login(webTestClient, "buyer", "buyer");
 
         assertThat(pathAndQuery(locationOf(client.post().uri("/buy")
                 .exchange()
@@ -115,10 +117,16 @@ class PurchaseFlowTest extends StorefrontSpringTest {
         assertThat(URLDecoder.decode(pathAndQuery(backToCatalog), StandardCharsets.UTF_8))
                 .isEqualTo("/items?search=моло&sort=ALPHA&pageSize=10&pageNumber=1");
 
+        long buyerId = users.findByUsername("buyer").block(TIMEOUT).getId();
+        drainPayments();
         String location = locationOf(client.post().uri("/buy")
                 .exchange()
                 .expectStatus().is3xxRedirection());
         assertThat(pathAndQuery(location)).startsWith("/orders/").endsWith("?newOrder=true");
+        RecordedRequest payment = takePayment();
+        assertThat(payment).isNotNull();
+        assertThat(payment.getHeader("Authorization")).isEqualTo("Bearer test-token");
+        assertThat(payment.getBody().readUtf8()).contains("\"userId\":" + buyerId);
 
         client.get().uri(pathAndQuery(location))
                 .exchange()
@@ -159,7 +167,7 @@ class PurchaseFlowTest extends StorefrontSpringTest {
                     assertThat(body).doesNotContain("Яблоки Гала");
                 });
 
-        browser().get().uri("/orders")
+        login(webTestClient, "second", "second").get().uri("/orders")
                 .exchange()
                 .expectBody(String.class)
                 .value(body -> assertThat(body).doesNotContain("Заказ №"));
@@ -169,18 +177,6 @@ class PurchaseFlowTest extends StorefrontSpringTest {
                 .exchange()
                 .expectBody(String.class)
                 .value(body -> assertThat(body).contains(">0<"));
-    }
-
-    private WebTestClient browser() {
-        ResponseCookie cookie = webTestClient.get().uri("/cart/items")
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody()
-                .returnResult()
-                .getResponseCookies()
-                .getFirst("SESSION");
-        assertThat(cookie).isNotNull();
-        return webTestClient.mutate().defaultCookie("SESSION", cookie.getValue()).build();
     }
 
     private Item item(String title) {

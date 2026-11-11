@@ -1,12 +1,24 @@
 services:
   redis:
     image: redis:7-alpine
+  auth-server:
+    build:
+      context: .
+      dockerfile: auth-server/Dockerfile
+    ports:
+      - "9000:9000"
+    environment:
+      SPRING_SECURITY_OAUTH2_AUTHORIZATIONSERVER_ISSUER: http://auth-server:9000
   payment-service:
     build:
       context: .
       dockerfile: payment-service/Dockerfile
     ports:
       - "8081:8081"
+    environment:
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://auth-server:9000
+    depends_on:
+      - auth-server
   my-market-app:
     build:
       context: .
@@ -16,6 +28,8 @@ services:
     environment:
       SPRING_DATA_REDIS_HOST: redis
       PAYMENT_BASE_URL: http://payment-service:8081
+      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_AUTH_TOKEN_URI: http://auth-server:9000/oauth2/token
     depends_on:
       - redis
       - payment-service
+      - auth-server

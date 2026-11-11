@@ -6,7 +6,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.server.WebSession;
 import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.service.OrderService;
 import ru.yandex.practicum.mymarket.service.PaymentRejectedException;
@@ -21,33 +20,29 @@ public class OrderController {
     }
 
     @GetMapping("/orders")
-    public Mono<String> orders(WebSession session, Model model) {
-        session.start();
-        return orders.list(session.getId())
+    public Mono<String> orders(Model model) {
+        return CurrentBuyer.context().flatMap(context -> orders.list(CurrentBuyer.userId(context))
                 .doOnNext(list -> model.addAttribute("orders", list))
-                .thenReturn("orders");
+                .thenReturn("orders"));
     }
 
     @GetMapping("/orders/{id}")
     public Mono<String> order(
             @PathVariable long id,
             @RequestParam(defaultValue = "false") boolean newOrder,
-            WebSession session,
             Model model) {
-        session.start();
         model.addAttribute("newOrder", newOrder);
-        return orders.get(id, session.getId())
+        return CurrentBuyer.context().flatMap(context -> orders.get(id, CurrentBuyer.userId(context))
                 .doOnNext(order -> model.addAttribute("order", order))
-                .thenReturn("order");
+                .thenReturn("order"));
     }
 
     @PostMapping("/buy")
-    public Mono<String> buy(WebSession session) {
-        session.start();
-        return orders.buy(session.getId())
+    public Mono<String> buy() {
+        return CurrentBuyer.id().flatMap(userId -> orders.buy(userId)
                 .map(id -> "redirect:/orders/" + id + "?newOrder=true")
                 .onErrorResume(OrderController::rejected, ex -> Mono.just("redirect:/cart/items"))
-                .defaultIfEmpty("redirect:/cart/items");
+                .defaultIfEmpty("redirect:/cart/items"));
     }
 
     private static boolean rejected(Throwable failure) {

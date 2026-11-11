@@ -5,6 +5,7 @@ COPY mvnw pom.xml ./
 COPY openapi openapi
 COPY payment-service payment-service
 COPY my-market-app/pom.xml my-market-app/pom.xml
+COPY auth-server/pom.xml auth-server/pom.xml
 RUN chmod +x mvnw && ./mvnw -B -DskipTests -pl payment-service -am package
 
 FROM eclipse-temurin:21-jre

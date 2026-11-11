@@ -30,6 +30,7 @@ import org.springframework.boot.autoconfigure.validation.ValidationAutoConfigura
 import org.springframework.boot.test.autoconfigure.data.r2dbc.DataR2dbcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.r2dbc.connection.DelegatingConnectionFactory;
+import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.core.Ordered;
 import org.springframework.data.r2dbc.mapping.event.BeforeConvertCallback;
@@ -81,12 +82,23 @@ import ru.yandex.practicum.mymarket.service.PaymentGateway;
 class MarketPersistenceTest {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
+    private static final long ONE = 1;
+    private static final long TWO = 2;
+    private static final long BUYER = 3;
+    private static final long OTHER = 4;
+    private static final long FRESH = 5;
 
     @Autowired
     private ItemRepository items;
 
     @Autowired
     private CartRepository carts;
+
+    @Autowired
+    private UserRepository users;
+
+    @Autowired
+    private DatabaseClient database;
 
     @Autowired
     private CartItemRepository cartItems;
@@ -123,8 +135,21 @@ class MarketPersistenceTest {
                 .then(ordersRepo.deleteAll())
                 .then(cartItems.deleteAll())
                 .then(carts.deleteAll())
+                .then(users.deleteAll())
                 .then(items.deleteAll())
+                .then(insertUsers())
                 .block(TIMEOUT);
+    }
+
+    private Mono<Void> insertUsers() {
+        return Flux.just(ONE, TWO, BUYER, OTHER, FRESH)
+                .concatMap(id -> database.sql(
+                                "INSERT INTO users (id, username, password, enabled) VALUES (:id, :username, 'x', TRUE)")
+                        .bind("id", id)
+                        .bind("username", "user-" + id)
+                        .fetch()
+                        .rowsUpdated())
+                .then();
     }
 
     @Test
@@ -133,16 +158,16 @@ class MarketPersistenceTest {
         Item milk = save("Молоко", "пастеризованное", 89);
         save("Вода", "негазированная", 55);
 
-        CatalogPage byTitle = await(catalog.show("МОЛО", "NO", 5, 1, "s"));
+        CatalogPage byTitle = await(catalog.show("МОЛО", "NO", 5, 1, null));
         assertThat(byTitle.items()).extracting(ItemDto::title).containsExactly("Молоко");
 
-        CatalogPage byDescription = await(catalog.show("ржаной", "ALPHA", 5, 1, "s"));
+        CatalogPage byDescription = await(catalog.show("ржаной", "ALPHA", 5, 1, null));
         assertThat(byDescription.items()).extracting(ItemDto::id).containsExactly(bread.getId());
 
-        CatalogPage byPrice = await(catalog.show("", "PRICE", 10, 1, "s"));
+        CatalogPage byPrice = await(catalog.show("", "PRICE", 10, 1, null));
         assertThat(byPrice.items()).extracting(ItemDto::title).containsExactly("Вода", "Хлеб", "Молоко");
 
-        CatalogPage byAlpha = await(catalog.show("  ", "alpha", 10, 1, "s"));
+        CatalogPage byAlpha = await(catalog.show("  ", "alpha", 10, 1, null));
         assertThat(byAlpha.search()).isEmpty();
         assertThat(byAlpha.sort()).isEqualTo("ALPHA");
         assertThat(byAlpha.items()).extracting(ItemDto::title).containsExactly("Вода", "Молоко", "Хлеб");
@@ -156,10 +181,10 @@ class MarketPersistenceTest {
         save("100%", "скидка", 10);
         save("Молоко", "обычное", 20);
 
-        assertThat(await(catalog.show("%", "NO", 5, 1, "s")).items())
+        assertThat(await(catalog.show("%", "NO", 5, 1, null)).items())
                 .extracting(ItemDto::title)
                 .containsExactly("100%");
-        assertThat(await(catalog.show("_", "NO", 5, 1, "s")).items()).isEmpty();
+        assertThat(await(catalog.show("_", "NO", 5, 1, null)).items()).isEmpty();
     }
 
     @Test
@@ -169,14 +194,14 @@ class MarketPersistenceTest {
         save("Три", "c", 3);
         save("Четыре", "d", 4);
 
-        CatalogPage page = await(catalog.show("", "NO", 5, 1, "s"));
+        CatalogPage page = await(catalog.show("", "NO", 5, 1, null));
         assertThat(page.paging().pageSize()).isEqualTo(5);
         assertThat(page.paging().pageNumber()).isEqualTo(1);
         assertThat(page.paging().hasPrevious()).isFalse();
         assertThat(page.paging().hasNext()).isFalse();
         assertThat(page.items()).extracting(ItemDto::title).containsExactly("Один", "Два", "Три", "Четыре");
 
-        CatalogPage second = await(catalog.show("", "NO", 3, 2, "s"));
+        CatalogPage second = await(catalog.show("", "NO", 3, 2, null));
         assertThat(second.paging().hasPrevious()).isTrue();
         assertThat(second.paging().hasNext()).isFalse();
         assertThat(second.items()).extracting(ItemDto::title).containsExactly("Четыре");
@@ -187,25 +212,25 @@ class MarketPersistenceTest {
         Item apples = save("Яблоки", "сладкие", 129);
         Item milk = save("Молоко", "литр", 89);
 
-        await(cart.change("one", apples.getId(), CartAction.MINUS));
-        assertThat(await(cart.lines("one"))).isEmpty();
-        assertThat(sum("one")).isZero();
+        await(cart.change(ONE, apples.getId(), CartAction.MINUS));
+        assertThat(await(cart.lines(ONE))).isEmpty();
+        assertThat(sum(ONE)).isZero();
 
-        await(cart.change("one", apples.getId(), CartAction.PLUS));
-        await(cart.change("one", apples.getId(), CartAction.PLUS));
-        await(cart.change("one", milk.getId(), CartAction.PLUS));
-        assertThat(sum("one")).isEqualTo(129 * 2 + 89);
-        assertThat(await(catalog.item(apples.getId(), "one")).count()).isEqualTo(2);
-        assertThat(await(catalog.item(apples.getId(), "two")).count()).isZero();
+        await(cart.change(ONE, apples.getId(), CartAction.PLUS));
+        await(cart.change(ONE, apples.getId(), CartAction.PLUS));
+        await(cart.change(ONE, milk.getId(), CartAction.PLUS));
+        assertThat(sum(ONE)).isEqualTo(129 * 2 + 89);
+        assertThat(await(catalog.item(apples.getId(), ONE)).count()).isEqualTo(2);
+        assertThat(await(catalog.item(apples.getId(), TWO)).count()).isZero();
 
-        await(cart.change("one", apples.getId(), CartAction.MINUS));
-        await(cart.change("one", milk.getId(), CartAction.DELETE));
-        await(cart.change("one", apples.getId(), CartAction.MINUS));
-        await(cart.change("one", apples.getId(), CartAction.MINUS));
-        assertThat(await(cart.lines("one"))).isEmpty();
-        assertThat(await(cart.lines("two"))).isEmpty();
+        await(cart.change(ONE, apples.getId(), CartAction.MINUS));
+        await(cart.change(ONE, milk.getId(), CartAction.DELETE));
+        await(cart.change(ONE, apples.getId(), CartAction.MINUS));
+        await(cart.change(ONE, apples.getId(), CartAction.MINUS));
+        assertThat(await(cart.lines(ONE))).isEmpty();
+        assertThat(await(cart.lines(TWO))).isEmpty();
 
-        assertThatThrownBy(() -> await(cart.change("one", 999, CartAction.PLUS)))
+        assertThatThrownBy(() -> await(cart.change(ONE, 999, CartAction.PLUS)))
                 .isInstanceOf(ResponseStatusException.class);
     }
 
@@ -215,44 +240,44 @@ class MarketPersistenceTest {
         save("Молоко", "литр", 89);
         long milkId = idOf("Молоко");
 
-        assertThat(await(orders.buy("buyer"))).isNull();
+        assertThat(await(orders.buy(BUYER))).isNull();
 
-        await(cart.change("buyer", apples.getId(), CartAction.PLUS));
-        await(cart.change("buyer", apples.getId(), CartAction.PLUS));
-        await(cart.change("buyer", milkId, CartAction.PLUS));
+        await(cart.change(BUYER, apples.getId(), CartAction.PLUS));
+        await(cart.change(BUYER, apples.getId(), CartAction.PLUS));
+        await(cart.change(BUYER, milkId, CartAction.PLUS));
 
-        long orderId = await(orders.buy("buyer"));
+        long orderId = await(orders.buy(BUYER));
         apples.setPrice(1);
         await(items.save(apples));
 
-        OrderDto order = await(orders.get(orderId, "buyer"));
+        OrderDto order = await(orders.get(orderId, BUYER));
         assertThat(order.items()).extracting(item -> item.title()).containsExactly("Яблоки", "Молоко");
         assertThat(order.items()).extracting(item -> item.count()).containsExactly(2, 1);
         assertThat(order.items().get(0).price()).isEqualTo(129);
         assertThat(order.items().get(0).imgPath()).isEqualTo("images/Яблоки.png");
         assertThat(order.totalSum()).isEqualTo(129L * 2 + 89);
-        assertThat(await(cart.lines("buyer"))).isEmpty();
-        assertThat(await(orders.buy("buyer"))).isNull();
-        assertThat(await(orders.list("buyer"))).extracting(OrderDto::id).containsExactly(orderId);
-        assertThat(await(orders.list("other"))).isEmpty();
-        assertThatThrownBy(() -> await(orders.get(orderId, "other"))).isInstanceOf(ResponseStatusException.class);
+        assertThat(await(cart.lines(BUYER))).isEmpty();
+        assertThat(await(orders.buy(BUYER))).isNull();
+        assertThat(await(orders.list(BUYER))).extracting(OrderDto::id).containsExactly(orderId);
+        assertThat(await(orders.list(OTHER))).isEmpty();
+        assertThatThrownBy(() -> await(orders.get(orderId, OTHER))).isInstanceOf(ResponseStatusException.class);
     }
 
     @Test
     void twoConcurrentPlusOnAnExistingLineBothCount() {
         Item apples = save("Яблоки", "сладкие", 129);
-        await(cart.change("one", apples.getId(), CartAction.PLUS));
+        await(cart.change(ONE, apples.getId(), CartAction.PLUS));
 
         overlap(
-                cart.change("one", apples.getId(), CartAction.PLUS),
-                cart.change("one", apples.getId(), CartAction.PLUS),
+                cart.change(ONE, apples.getId(), CartAction.PLUS),
+                cart.change(ONE, apples.getId(), CartAction.PLUS),
                 CartItem.class);
 
         assertThat(await(cartItems.count())).isEqualTo(1);
-        assertThat(await(cart.lines("one"))).extracting(ItemDto::count).containsExactly(3);
+        assertThat(await(cart.lines(ONE))).extracting(ItemDto::count).containsExactly(3);
 
-        await(cart.change("one", apples.getId(), CartAction.PLUS));
-        assertThat(await(cart.lines("one"))).extracting(ItemDto::count).containsExactly(4);
+        await(cart.change(ONE, apples.getId(), CartAction.PLUS));
+        assertThat(await(cart.lines(ONE))).extracting(ItemDto::count).containsExactly(4);
     }
 
     @Test
@@ -260,51 +285,51 @@ class MarketPersistenceTest {
         Item apples = save("Яблоки", "сладкие", 129);
 
         overlap(
-                cart.change("fresh", apples.getId(), CartAction.PLUS),
-                cart.change("fresh", apples.getId(), CartAction.PLUS),
+                cart.change(FRESH, apples.getId(), CartAction.PLUS),
+                cart.change(FRESH, apples.getId(), CartAction.PLUS),
                 CartItem.class);
 
         assertThat(await(carts.count())).isEqualTo(1);
         assertThat(await(cartItems.count())).isEqualTo(1);
-        assertThat(await(cart.lines("fresh"))).extracting(ItemDto::count).containsExactly(2);
+        assertThat(await(cart.lines(FRESH))).extracting(ItemDto::count).containsExactly(2);
 
-        await(cart.change("fresh", apples.getId(), CartAction.MINUS));
-        assertThat(await(cart.lines("fresh"))).extracting(ItemDto::count).containsExactly(1);
+        await(cart.change(FRESH, apples.getId(), CartAction.MINUS));
+        assertThat(await(cart.lines(FRESH))).extracting(ItemDto::count).containsExactly(1);
     }
 
     @Test
     void twoConcurrentBuysCreateOneOrder() {
         Item apples = save("Яблоки", "сладкие", 129);
         Item milk = save("Молоко", "литр", 89);
-        await(cart.change("buyer", apples.getId(), CartAction.PLUS));
-        await(cart.change("buyer", apples.getId(), CartAction.PLUS));
-        await(cart.change("buyer", milk.getId(), CartAction.PLUS));
+        await(cart.change(BUYER, apples.getId(), CartAction.PLUS));
+        await(cart.change(BUYER, apples.getId(), CartAction.PLUS));
+        await(cart.change(BUYER, milk.getId(), CartAction.PLUS));
 
-        overlap(orders.buy("buyer").then(), orders.buy("buyer").then(), Order.class);
+        overlap(orders.buy(BUYER).then(), orders.buy(BUYER).then(), Order.class);
 
         assertThat(await(ordersRepo.count())).isEqualTo(1);
-        assertThat(await(orders.list("buyer"))).singleElement().satisfies(order -> assertThat(order.items())
+        assertThat(await(orders.list(BUYER))).singleElement().satisfies(order -> assertThat(order.items())
                 .extracting(OrderItemDto::title, OrderItemDto::count)
                 .containsExactly(tuple("Яблоки", 2), tuple("Молоко", 1)));
-        assertThat(await(cart.lines("buyer"))).isEmpty();
+        assertThat(await(cart.lines(BUYER))).isEmpty();
     }
 
     @Test
     void buyRollsBackWhenTheSecondLineIsNotSaved() {
         Item first = save("Товар 1", "a", 10);
         Item second = save("Товар 2", "b", 20);
-        await(cart.change("buyer", first.getId(), CartAction.PLUS));
-        await(cart.change("buyer", second.getId(), CartAction.PLUS));
-        await(cart.change("buyer", second.getId(), CartAction.PLUS));
+        await(cart.change(BUYER, first.getId(), CartAction.PLUS));
+        await(cart.change(BUYER, second.getId(), CartAction.PLUS));
+        await(cart.change(BUYER, second.getId(), CartAction.PLUS));
         orderItemGate.failOnSecondSave();
 
-        assertThatThrownBy(() -> await(orders.buy("buyer")))
+        assertThatThrownBy(() -> await(orders.buy(BUYER)))
                 .satisfies(thrown -> assertThat(NestedExceptionUtils.getMostSpecificCause(thrown))
                         .isInstanceOf(IllegalStateException.class));
 
         assertThat(await(ordersRepo.count())).isZero();
         assertThat(await(orderItems.count())).isZero();
-        assertThat(await(cart.lines("buyer")))
+        assertThat(await(cart.lines(BUYER)))
                 .extracting(ItemDto::title, ItemDto::count)
                 .containsExactly(tuple("Товар 1", 1), tuple("Товар 2", 2));
     }
@@ -326,8 +351,8 @@ class MarketPersistenceTest {
                 .blockFirst(TIMEOUT);
     }
 
-    private long sum(String sessionId) {
-        return await(cart.lines(sessionId)).stream().mapToLong(ItemDto::sum).sum();
+    private long sum(long userId) {
+        return await(cart.lines(userId)).stream().mapToLong(ItemDto::sum).sum();
     }
 
     // The second call is subscribed only after the first is parked inside its transaction.
@@ -605,12 +630,12 @@ class MarketPersistenceTest {
     static class SuccessfulPayments implements PaymentGateway {
 
         @Override
-        public Mono<Long> balance() {
+        public Mono<Long> balance(long userId) {
             return Mono.just(Long.MAX_VALUE);
         }
 
         @Override
-        public Mono<Void> pay(long amount) {
+        public Mono<Void> pay(long userId, long amount) {
             return Mono.empty();
         }
     }

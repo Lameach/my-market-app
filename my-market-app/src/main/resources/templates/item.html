@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<html lang="en" xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
 
 <head>
     <meta charset="utf-8">
@@ -12,14 +12,7 @@
     <div class="container p-2">
         <div class="row p-2">
             <div class="col">
-                <div class="hstack gap-3">
-                    <h2>
-                        <span class="badge text-bg-success">Витрина магазина</span>
-                    </h2>
-                    <a href="/orders" class="btn btn-secondary ms-auto bi bi-file-earmark-text"> Заказы</a>
-                    <a href="/cart/items" class="btn btn-secondary bi bi-cart4"> Корзина</a>
-                    <a href="/items" class="btn btn-secondary bi bi-arrow-left-square"> Главная</a>
-                </div>
+                <div th:replace="~{fragments/header :: bar(true)}"></div>
             </div>
         </div>
         <div class="row p-2">
@@ -32,7 +25,7 @@
                             <span class="badge text-bg-success justify-content-end" th:text="${item.price()}+' руб.'"></span>
                         </h5>
                         <p class="card-text" th:text="${item.description()}"></p>
-                        <form th:action="@{${'/items/'+item.id()}}" method="post">
+                        <form sec:authorize="isAuthenticated()" th:action="@{${'/items/'+item.id()}}" method="post">
                             <div class="hstack gap-3">
                                 <button type="submit" class="btn btn-outline-secondary" name="action" value="MINUS">-</button>
                                 <span th:text="${item.count()}"></span>

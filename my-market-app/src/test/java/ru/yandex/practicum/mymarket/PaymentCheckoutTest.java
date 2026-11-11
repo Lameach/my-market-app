@@ -10,7 +10,6 @@ import okhttp3.mockwebserver.RecordedRequest;
 import okhttp3.mockwebserver.SocketPolicy;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseCookie;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.BodyInserters;
 import ru.yandex.practicum.mymarket.model.Item;
@@ -30,7 +29,7 @@ class PaymentCheckoutTest extends StorefrontSpringTest {
     void buyStaysDisabledWhenTheBalanceDoesNotCoverTheCart() {
         payments.setDispatcher(balanceThenPay("{\"amount\":1}", 402, "{\"message\":\"Недостаточно средств\"}"));
         Item apples = item("Яблоки Гала");
-        WebTestClient client = browser();
+        WebTestClient client = login(webTestClient, "buyer", "buyer");
         postItem(client, apples.getId());
 
         client.get().uri("/cart/items")
@@ -53,6 +52,32 @@ class PaymentCheckoutTest extends StorefrontSpringTest {
     }
 
     @Test
+    void cartSaysWhenThePaymentServiceRejectsTheClient() {
+        payments.setDispatcher(new Dispatcher() {
+            @Override
+            public MockResponse dispatch(RecordedRequest request) {
+                String path = request.getPath() == null ? "" : request.getPath();
+                if (path.startsWith("/oauth2/token")) {
+                    return accessToken();
+                }
+                return json(401, "{\"message\":\"unauthorized\"}");
+            }
+        });
+        Item apples = item("Яблоки Гала");
+        WebTestClient client = login(webTestClient, "buyer", "buyer");
+        postItem(client, apples.getId());
+
+        client.get().uri("/cart/items")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class)
+                .value(body -> {
+                    assertThat(body).contains("Сервис платежей отклонил авторизацию клиента");
+                    assertThat(body).contains("disabled=\"disabled\"");
+                });
+    }
+
+    @Test
     void buyStaysDisabledWhenThePaymentServiceIsDown() {
         payments.setDispatcher(new Dispatcher() {
             @Override
@@ -61,7 +86,7 @@ class PaymentCheckoutTest extends StorefrontSpringTest {
             }
         });
         Item apples = item("Яблоки Гала");
-        WebTestClient client = browser();
+        WebTestClient client = login(webTestClient, "buyer", "buyer");
         postItem(client, apples.getId());
 
         client.get().uri("/cart/items")
@@ -88,6 +113,9 @@ class PaymentCheckoutTest extends StorefrontSpringTest {
             @Override
             public MockResponse dispatch(RecordedRequest request) {
                 String path = request.getPath() == null ? "" : request.getPath();
+                if (path.startsWith("/oauth2/token")) {
+                    return accessToken();
+                }
                 if (path.startsWith("/balance")) {
                     return json(200, balance);
                 }
@@ -97,18 +125,6 @@ class PaymentCheckoutTest extends StorefrontSpringTest {
                 return new MockResponse().setResponseCode(404);
             }
         };
-    }
-
-    private WebTestClient browser() {
-        ResponseCookie cookie = webTestClient.get().uri("/cart/items")
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody()
-                .returnResult()
-                .getResponseCookies()
-                .getFirst("SESSION");
-        assertThat(cookie).isNotNull();
-        return webTestClient.mutate().defaultCookie("SESSION", cookie.getValue()).build();
     }
 
     private Item item(String title) {

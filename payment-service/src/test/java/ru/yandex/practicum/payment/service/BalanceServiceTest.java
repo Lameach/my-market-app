@@ -16,32 +16,43 @@ import org.springframework.http.HttpStatus;
 
 class BalanceServiceTest {
 
+    private static final long USER = 1L;
+
     @Test
     void chargesUntilTheBalanceWouldGoNegative() {
         BalanceService balances = new BalanceService(1000);
 
-        assertThat(balances.current().block(Duration.ofSeconds(2))).isEqualTo(1000);
-        assertThat(balances.pay(400).block(Duration.ofSeconds(2))).isEqualTo(600);
-        assertThat(balances.current().block(Duration.ofSeconds(2))).isEqualTo(600);
+        assertThat(balances.current(USER).block(Duration.ofSeconds(2))).isEqualTo(1000);
+        assertThat(balances.pay(USER, 400).block(Duration.ofSeconds(2))).isEqualTo(600);
+        assertThat(balances.current(USER).block(Duration.ofSeconds(2))).isEqualTo(600);
 
-        assertThatThrownBy(() -> balances.pay(601).block(Duration.ofSeconds(2)))
+        assertThatThrownBy(() -> balances.pay(USER, 601).block(Duration.ofSeconds(2)))
                 .isInstanceOf(PaymentException.class)
                 .extracting(thrown -> ((PaymentException) thrown).status())
                 .isEqualTo(HttpStatus.PAYMENT_REQUIRED);
-        assertThat(balances.current().block(Duration.ofSeconds(2))).isEqualTo(600);
+        assertThat(balances.current(USER).block(Duration.ofSeconds(2))).isEqualTo(600);
+    }
+
+    @Test
+    void oneBuyerDoesNotSpendAnothersMoney() {
+        BalanceService balances = new BalanceService(1000);
+
+        assertThat(balances.pay(USER, 400).block(Duration.ofSeconds(2))).isEqualTo(600);
+        assertThat(balances.current(2L).block(Duration.ofSeconds(2))).isEqualTo(1000);
+        assertThat(balances.current(USER).block(Duration.ofSeconds(2))).isEqualTo(600);
     }
 
     @Test
     void rejectsANonPositiveAmountWithoutChangingTheBalance() {
         BalanceService balances = new BalanceService(500);
 
-        assertThatThrownBy(() -> balances.pay(0).block(Duration.ofSeconds(2)))
+        assertThatThrownBy(() -> balances.pay(USER, 0).block(Duration.ofSeconds(2)))
                 .isInstanceOf(PaymentException.class)
                 .extracting(thrown -> ((PaymentException) thrown).status())
                 .isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThatThrownBy(() -> balances.pay(-10).block(Duration.ofSeconds(2)))
+        assertThatThrownBy(() -> balances.pay(USER, -10).block(Duration.ofSeconds(2)))
                 .isInstanceOf(PaymentException.class);
-        assertThat(balances.current().block(Duration.ofSeconds(2))).isEqualTo(500);
+        assertThat(balances.current(USER).block(Duration.ofSeconds(2))).isEqualTo(500);
     }
 
     @Test
@@ -60,7 +71,7 @@ class BalanceServiceTest {
                         return false;
                     }
                     try {
-                        balances.pay(100).block(Duration.ofSeconds(2));
+                        balances.pay(USER, 100).block(Duration.ofSeconds(2));
                         return true;
                     } catch (PaymentException ex) {
                         return false;
@@ -76,7 +87,7 @@ class BalanceServiceTest {
                 }
             }
             assertThat(paid).isEqualTo(10);
-            assertThat(balances.current().block(Duration.ofSeconds(2))).isZero();
+            assertThat(balances.current(USER).block(Duration.ofSeconds(2))).isZero();
         } finally {
             pool.shutdownNow();
         }

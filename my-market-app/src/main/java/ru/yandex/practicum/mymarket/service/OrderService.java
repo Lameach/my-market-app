@@ -46,36 +46,36 @@ public class OrderService {
     }
 
     @Transactional(readOnly = true)
-    public Mono<List<OrderDto>> list(String sessionId) {
-        return orders.findBySessionIdOrderByIdDesc(sessionId)
+    public Mono<List<OrderDto>> list(long userId) {
+        return orders.findByUserIdOrderByIdDesc(userId)
                 .concatMap(this::toDto)
                 .collectList();
     }
 
     @Transactional(readOnly = true)
-    public Mono<OrderDto> get(long id, String sessionId) {
-        return orders.findByIdAndSessionId(id, sessionId)
+    public Mono<OrderDto> get(long id, long userId) {
+        return orders.findByIdAndUserId(id, userId)
                 .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND)))
                 .flatMap(this::toDto);
     }
 
     @Transactional
-    public Mono<Long> buy(String sessionId) {
-        return carts.findBySessionIdForUpdate(sessionId)
+    public Mono<Long> buy(long userId) {
+        return carts.findByUserIdForUpdate(userId)
                 .flatMap(cart -> cartItems.findByCartIdOrderByIdAsc(cart.getId())
                         .filter(line -> line.getCount() > 0)
                         .collectList()
-                        .flatMap(lines -> place(sessionId, lines)));
+                        .flatMap(lines -> place(userId, lines)));
     }
 
-    private Mono<Long> place(String sessionId, List<CartItem> lines) {
+    private Mono<Long> place(long userId, List<CartItem> lines) {
         if (lines.isEmpty()) {
             return Mono.empty();
         }
         List<Long> ids = lines.stream().map(CartItem::getItemId).toList();
         return items.cards(ids)
-                .flatMap(byId -> payments.pay(total(lines, byId))
-                        .then(orders.save(new Order(sessionId)))
+                .flatMap(byId -> payments.pay(userId, total(lines, byId))
+                        .then(orders.save(new Order(userId)))
                         .flatMap(saved -> Flux.fromIterable(lines)
                                 .concatMap(line -> {
                                     Item item = byId.get(line.getItemId());

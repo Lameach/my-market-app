@@ -10,6 +10,13 @@ paths:
       tags:
         - payments
       summary: Current account balance
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
       responses:
         "200":
           description: Current balance
@@ -62,11 +69,15 @@ components:
       type: object
       required:
         - amount
+        - userId
       properties:
         amount:
           type: integer
           format: int64
           minimum: 1
+        userId:
+          type: integer
+          format: int64
     PaymentResult:
       type: object
       required:
