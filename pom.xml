@@ -17,6 +17,7 @@
 	<modules>
 		<module>my-market-app</module>
 		<module>payment-service</module>
+		<module>auth-server</module>
 	</modules>
 	<properties>
 		<java.version>21</java.version>
